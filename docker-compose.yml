@@ -1,0 +1,26 @@
+services:
+  openclaw-work:
+    build: .
+    container_name: openclaw-work
+    restart: "no"
+    ports:
+      - "127.0.0.1:18790:18789"
+    volumes:
+      - openclaw-work-state:/home/node/.openclaw
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - NODE_ENV=production
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    # Seed files are copied into the image; entrypoint plants them on first run
+    healthcheck:
+      test: ["CMD", "openclaw", "gateway", "health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  openclaw-work-state:

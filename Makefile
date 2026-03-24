@@ -1,0 +1,71 @@
+.PHONY: start stop status logs shell backup restore upgrade clean help
+
+COMPOSE := docker compose
+CONTAINER := openclaw-work
+VOLUME := openclaw-docker_openclaw-work-state
+BACKUP_DIR := backups
+
+help: ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+
+start: ## Start the container
+	$(COMPOSE) up -d
+
+stop: ## Stop the container
+	$(COMPOSE) down
+
+status: ## Show container and gateway status
+	@$(COMPOSE) ps
+	@echo ""
+	@$(COMPOSE) exec $(CONTAINER) openclaw gateway health 2>/dev/null || \
+		echo "Gateway not reachable (container may be starting)"
+
+logs: ## Tail container logs
+	$(COMPOSE) logs -f
+
+shell: ## Shell into the running container
+	$(COMPOSE) exec $(CONTAINER) sh
+
+backup: ## Backup volume to tar.gz
+	@mkdir -p $(BACKUP_DIR)
+	@BACKUP_FILE=$(BACKUP_DIR)/$(VOLUME)-$$(date +%Y%m%d-%H%M%S).tar.gz; \
+	echo "Backing up volume to $$BACKUP_FILE..."; \
+	docker run --rm \
+		-v $(VOLUME):/data:ro \
+		-v $$(pwd)/$(BACKUP_DIR):/backup \
+		alpine tar czf /backup/$$(basename $$BACKUP_FILE) -C /data . && \
+	echo "Done: $$BACKUP_FILE"
+
+restore: ## Restore from tar.gz (usage: make restore FILE=path/to/backup.tar.gz)
+	@if [ -z "$(FILE)" ]; then \
+		echo "Usage: make restore FILE=backups/your-backup.tar.gz"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(FILE)" ]; then \
+		echo "File not found: $(FILE)"; \
+		exit 1; \
+	fi
+	@echo "Restoring from $(FILE)..."
+	@$(COMPOSE) down 2>/dev/null || true
+	docker run --rm \
+		-v $(VOLUME):/data \
+		-v $$(pwd)/$(FILE):/backup.tar.gz:ro \
+		alpine sh -c "rm -rf /data/* && tar xzf /backup.tar.gz -C /data"
+	@echo "Restored. Run 'make start' to start the container."
+
+upgrade: ## Rebuild image with latest openclaw and restart
+	$(COMPOSE) down
+	$(COMPOSE) build --no-cache
+	$(COMPOSE) up -d
+	@echo "Upgraded. Check 'make logs' for startup output."
+
+clean: ## Stop container and remove volume (destructive!)
+	@echo "This will STOP the container and DELETE all OpenClaw data."
+	@read -p "Are you sure? [y/N] " confirm; \
+	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
+		$(COMPOSE) down -v; \
+		echo "Cleaned."; \
+	else \
+		echo "Aborted."; \
+	fi

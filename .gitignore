@@ -1,0 +1,9 @@
+# Secrets
+.env
+
+# Backups
+*.tar.gz
+backups/
+
+# OS
+.DS_Store
