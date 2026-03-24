@@ -12,6 +12,12 @@ help: ## Show this help
 
 start: ## Start the container
 	$(COMPOSE) up -d
+	@echo "Waiting for healthy..."
+	@for i in $$(seq 1 30); do \
+		STATUS=$$(docker inspect $(CONTAINER) --format '{{.State.Health.Status}}' 2>/dev/null); \
+		if [ "$$STATUS" = "healthy" ]; then echo "Container healthy."; break; fi; \
+		sleep 3; \
+	done
 
 stop: ## Stop the container
 	$(COMPOSE) down
@@ -62,7 +68,12 @@ upgrade: ## Rebuild image with latest openclaw and restart
 	$(COMPOSE) down
 	$(COMPOSE) build --no-cache
 	$(COMPOSE) up -d
-	@echo "Upgraded. Check 'make logs' for startup output."
+	@echo "Upgraded. Waiting for healthy..."
+	@for i in $$(seq 1 30); do \
+		STATUS=$$(docker inspect $(CONTAINER) --format '{{.State.Health.Status}}' 2>/dev/null); \
+		if [ "$$STATUS" = "healthy" ]; then echo "Container healthy. Run 'make status' to verify."; break; fi; \
+		sleep 3; \
+	done
 
 clean: ## Stop container and remove volume (destructive!)
 	@echo "This will STOP the container and DELETE all OpenClaw data."
