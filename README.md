@@ -24,6 +24,7 @@ bash setup.sh
 
 # 4. Connect your CLI
 export OPENCLAW_GATEWAY_URL=ws://localhost:18790
+export OPENCLAW_GATEWAY_TOKEN=openclaw-docker   # required by CLI when overriding URL (value is ignored — auth=none)
 openclaw agent --agent main -m "hello"
 ```
 
@@ -76,8 +77,11 @@ make logs     # tail container logs
 ### Send Messages
 
 ```bash
-# Set the gateway URL (add to ~/.zshrc to persist)
+# Set the gateway URL and token (add to ~/.zshrc to persist)
+# Note: OPENCLAW_GATEWAY_TOKEN is required by the CLI when overriding the URL.
+# The value doesn't matter (auth=none) — any non-empty string works.
 export OPENCLAW_GATEWAY_URL=ws://localhost:18790
+export OPENCLAW_GATEWAY_TOKEN=openclaw-docker
 
 # Send a message
 openclaw agent --agent main -m "review this PR"
@@ -89,7 +93,9 @@ make chat
 **Recommended: add a shell alias to `~/.zshrc`:**
 
 ```bash
-alias owc="OPENCLAW_GATEWAY_URL=ws://localhost:18790 openclaw agent --agent main"
+export OPENCLAW_GATEWAY_URL=ws://localhost:18790
+export OPENCLAW_GATEWAY_TOKEN=openclaw-docker
+alias owc="openclaw agent --agent main"
 ```
 
 Then just: `owc -m "hello"`
