@@ -10,6 +10,9 @@ services:
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - NODE_ENV=production
+      # Override the default LLM model (default: anthropic/claude-haiku-4-5)
+      # Set OPENCLAW_DEFAULT_MODEL in .env to change. Only applies on first run.
+      - OPENCLAW_DEFAULT_MODEL=${OPENCLAW_DEFAULT_MODEL:-anthropic/claude-haiku-4-5}
     deploy:
       resources:
         limits:
