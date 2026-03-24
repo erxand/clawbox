@@ -13,6 +13,9 @@ services:
       # Override the default LLM model (default: anthropic/claude-haiku-4-5)
       # Set OPENCLAW_DEFAULT_MODEL in .env to change. Only applies on first run.
       - OPENCLAW_DEFAULT_MODEL=${OPENCLAW_DEFAULT_MODEL:-anthropic/claude-haiku-4-5}
+      # Override the tools profile (default: coding = read/write/exec/web/memory)
+      # Options: minimal (session_status only), coding, messaging, full
+      - OPENCLAW_TOOLS_PROFILE=${OPENCLAW_TOOLS_PROFILE:-coding}
     deploy:
       resources:
         limits:

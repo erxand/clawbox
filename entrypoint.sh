@@ -34,10 +34,12 @@ if [ ! -f "$OPENCLAW_DIR/openclaw.json" ]; then
   # Set a sensible default model (haiku is much cheaper than opus)
   DEFAULT_MODEL="${OPENCLAW_DEFAULT_MODEL:-anthropic/claude-haiku-4-5}"
   openclaw config set agents.defaults.model.primary "$DEFAULT_MODEL" 2>/dev/null || true
-  # Use minimal tools profile to avoid spurious warnings about unavailable tools
-  # (the 'coding' profile includes apply_patch/image_generate which aren't available
-  # in headless/docker runtimes, causing noisy WARN logs on every startup)
-  openclaw config set tools.profile minimal 2>/dev/null || true
+  # Set tools profile. 'coding' gives read/write/exec/web/memory tools — the
+  # practical minimum for a useful agent. 'minimal' only grants session_status.
+  # Note: coding profile logs benign "[tools] unknown entries" warnings for
+  # apply_patch and image_generate (unavailable in this runtime) — not errors.
+  TOOLS_PROFILE="${OPENCLAW_TOOLS_PROFILE:-coding}"
+  openclaw config set tools.profile "$TOOLS_PROFILE" 2>/dev/null || true
 fi
 
 # ── Seed workspace files on first run ────────────────────────────────

@@ -169,6 +169,7 @@ This rebuilds the image (pulling the latest `openclaw` from npm) and restarts th
 |----------|----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | Yes | — | Your Anthropic API key |
 | `OPENCLAW_DEFAULT_MODEL` | No | `anthropic/claude-haiku-4-5` | LLM model for the agent (only applied on first run / fresh volume) |
+| `OPENCLAW_TOOLS_PROFILE` | No | `coding` | Tool profile for the agent: `minimal` (session_status only), `coding` (read/write/exec/web/memory), `messaging`, `full` |
 
 Stored in `.env` (git-ignored, mode 600).
 

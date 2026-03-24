@@ -1,10 +1,13 @@
-.PHONY: start stop status logs shell chat backup restore upgrade clean help
+.PHONY: start stop status logs shell tui chat backup restore upgrade clean help
 
 COMPOSE := docker compose
 CONTAINER := openclaw-work
 VOLUME := openclaw-docker_openclaw-work-state
 BACKUP_DIR := backups
 GATEWAY_URL := ws://localhost:18790
+# Token value doesn't matter (gateway runs auth=none) but the CLI
+# requires something to be set when using a URL override.
+GATEWAY_TOKEN := openclaw-docker
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -34,8 +37,10 @@ logs: ## Tail container logs
 shell: ## Shell into the running container
 	$(COMPOSE) exec $(CONTAINER) sh
 
-chat: ## Open openclaw TUI connected to the container gateway
-	OPENCLAW_GATEWAY_URL=$(GATEWAY_URL) openclaw tui
+tui: ## Open interactive TUI chat session with the container agent
+	OPENCLAW_GATEWAY_URL=$(GATEWAY_URL) OPENCLAW_GATEWAY_TOKEN=$(GATEWAY_TOKEN) openclaw tui
+
+chat: tui ## Alias for 'make tui'
 
 backup: ## Backup volume to tar.gz
 	@mkdir -p $(BACKUP_DIR)
