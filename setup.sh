@@ -45,7 +45,6 @@ info "Docker is ready."
 
 if [ -f "$ENV_FILE" ]; then
   info "Found existing .env — not overwriting."
-  # Source it so we can check values
   set -a; source "$ENV_FILE"; set +a
 else
   info "Creating .env file..."
@@ -64,14 +63,9 @@ else
     fi
   fi
 
-  # Generate gateway token
-  OPENCLAW_GATEWAY_TOKEN=$(openssl rand -hex 16)
-  info "Generated gateway token: ${DIM}${OPENCLAW_GATEWAY_TOKEN}${RESET}"
-
   # Write .env
   cat > "$ENV_FILE" <<EOF
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
 EOF
   chmod 600 "$ENV_FILE"
   info ".env created (permissions: 600)."
@@ -85,30 +79,24 @@ docker compose build --quiet
 info "Starting openclaw-work..."
 docker compose up -d
 
-# ── Wait for gateway + auto-pair CLI ────────────────────────────────
+# ── Wait for container to be healthy ────────────────────────────────
 echo ""
-info "Waiting for gateway to initialize..."
-
-# Wait for gateway to be ready (auth=none — any token works)
-GATEWAY_URL="ws://localhost:18790"
-info "Waiting for gateway to be ready (up to 20s)..."
-for i in $(seq 1 10); do
-  if OPENCLAW_GATEWAY_URL="$GATEWAY_URL" openclaw gateway health --token "localdev" &>/dev/null; then
-    info "Gateway is up and CLI connected successfully!"
+info "Waiting for gateway to become healthy (up to 60s)..."
+for i in $(seq 1 30); do
+  STATUS=$(docker inspect --format='{{.State.Health.Status}}' openclaw-work 2>/dev/null || echo "unknown")
+  if [ "$STATUS" = "healthy" ]; then
+    info "Gateway is healthy!"
     break
   fi
   sleep 2
 done
 
-# Final check
-if ! OPENCLAW_GATEWAY_URL="$GATEWAY_URL" openclaw gateway health --token "localdev" &>/dev/null; then
-  warn "Gateway not yet reachable. Check: docker compose logs -f"
+STATUS=$(docker inspect --format='{{.State.Health.Status}}' openclaw-work 2>/dev/null || echo "unknown")
+if [ "$STATUS" != "healthy" ]; then
+  warn "Container not yet healthy (status: $STATUS). Check: docker compose logs -f"
 fi
 
 # ── Print next steps ────────────────────────────────────────────────
-
-# Read the token from .env for display
-set -a; source "$ENV_FILE"; set +a
 
 echo ""
 echo -e "${BOLD}═══════════════════════════════════════════════════${RESET}"
@@ -120,14 +108,12 @@ echo -e "  Auth:     ${DIM}none (loopback-only, host access only)${RESET}"
 echo ""
 echo -e "${BOLD}Connect the CLI:${RESET}"
 echo ""
-echo "  # Point your local openclaw CLI at the container:"
 echo "  export OPENCLAW_GATEWAY_URL=ws://localhost:18790"
+echo "  openclaw agent --agent main -m \"hello\""
 echo ""
-echo "  # Then use --token with any value (gateway runs with auth=none):"
-echo "  openclaw gateway health --token localdev"
+echo -e "${BOLD}Or add to ~/.zshrc for convenience:${RESET}"
 echo ""
-echo "  # Or add a shell alias for convenience (~/.zshrc / ~/.bashrc):"
-echo "  alias ocw='OPENCLAW_GATEWAY_URL=ws://localhost:18790 openclaw --token localdev'"
+echo "  alias owc=\"OPENCLAW_GATEWAY_URL=ws://localhost:18790 openclaw agent --agent main\""
 echo ""
 echo -e "${BOLD}Useful commands:${RESET}"
 echo ""
@@ -135,6 +121,7 @@ echo "  make status   — check gateway status"
 echo "  make logs     — tail gateway logs"
 echo "  make stop     — stop the container"
 echo "  make shell    — shell into the container"
+echo "  make chat     — open openclaw TUI"
 echo ""
 echo -e "${DIM}Run 'make help' for all available targets.${RESET}"
 echo ""

@@ -16,7 +16,7 @@ services:
           memory: 512m
     # Seed files are copied into the image; entrypoint plants them on first run
     healthcheck:
-      test: ["CMD", "openclaw", "gateway", "health"]
+      test: ["CMD", "sh", "-c", "openclaw gateway health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

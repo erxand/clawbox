@@ -1,6 +1,6 @@
 # OpenClaw Docker
 
-Run [OpenClaw](https://github.com/openclaw/openclaw) in a Docker container. One command to set up, persistent state via Docker volumes, and easy CLI connectivity from your host.
+Run [OpenClaw](https://github.com/openclaw/openclaw) in a Docker container. One command to set up, persistent state via Docker volumes, and zero-friction CLI connectivity from your host.
 
 ## Prerequisites
 
@@ -15,44 +15,54 @@ Run [OpenClaw](https://github.com/openclaw/openclaw) in a Docker container. One 
 git clone https://github.com/your-org/openclaw-docker.git
 cd openclaw-docker
 
-# 2. Run setup (builds image, creates .env, starts container)
+# 2. Create .env with your API key
+cp .env.example .env
+# Edit .env and set ANTHROPIC_API_KEY
+
+# 3. Run setup (builds image, starts container, waits for healthy)
 bash setup.sh
 
-# 3. Connect your CLI
+# 4. Connect your CLI
 export OPENCLAW_GATEWAY_URL=ws://localhost:18790
-export OPENCLAW_GATEWAY_TOKEN=<token-from-setup-output>
-openclaw gateway health
+openclaw agent --agent main -m "hello"
 ```
 
-That's it. The setup script will prompt for your API key and generate a secure gateway token.
-
-## How It Works
+## Architecture
 
 ```
-┌─────────────────────┐         ┌──────────────────────────┐
-│  Host Machine        │         │  Docker Container        │
-│                      │  ws://  │                          │
-│  openclaw CLI ───────┼────────►│  openclaw gateway (fg)   │
-│                      │ :18790  │  port 18789              │
-│                      │         │                          │
-│                      │         │  /home/node/.openclaw/   │
-│                      │         │  ├── openclaw.json       │
-│                      │         │  └── workspace/          │
-│                      │         │      ├── SOUL.md         │
-│                      │         │      ├── USER.md         │
-│                      │         │      └── ...             │
-└─────────────────────┘         └──────────────────────────┘
-                                         │
-                                    Docker Volume
-                                 openclaw-work-state
+┌─────────────────────────┐         ┌───────────────────────────────────┐
+│  Host Machine            │         │  Docker Container                 │
+│                          │         │                                   │
+│  openclaw CLI ───────────┼── ws ──►│  socat (0.0.0.0:18789)           │
+│  ws://localhost:18790    │ :18790  │    │                              │
+│                          │         │    ▼                              │
+│  (loopback only — safe)  │         │  openclaw gateway (127.0.0.1:18788)
+│                          │         │    --bind loopback --auth none    │
+│                          │         │                                   │
+│                          │         │  /home/node/.openclaw/            │
+│                          │         │  ├── openclaw.json                │
+│                          │         │  └── workspace/                   │
+└─────────────────────────┘         └───────────────────────────────────┘
+                                             │
+                                        Docker Volume
+                                     openclaw-work-state
 ```
 
-- The **gateway** runs in foreground mode inside the container via `openclaw gateway run`
-- Your **host CLI** connects over WebSocket on `localhost:18790`
-- All state (config, workspace, memory) persists in a **named Docker volume**
-- Port is bound to **loopback only** (127.0.0.1) — not exposed to the network
+### Why socat?
 
-## Usage
+The gateway runs with `--auth none` and `--bind loopback` inside the container. This means it only listens on `127.0.0.1:18788` — unreachable from Docker's port mapping. **socat** bridges the gap by listening on `0.0.0.0:18789` inside the container and forwarding to `127.0.0.1:18788`.
+
+On the host side, Docker maps `127.0.0.1:18790 → container:18789`, so the gateway is **only reachable from your machine's loopback interface**. No device pairing, no token management — zero friction for developers.
+
+### Security Model
+
+- **auth=none** is safe because the port is **loopback-only on the host** (`127.0.0.1:18790`)
+- No other machine on your network can reach the gateway
+- The `.env` file has **mode 600** — only your user can read it
+- API keys are passed via environment variables, never baked into the image
+- The container runs as a **non-root user** (`node`)
+
+## Daily Usage
 
 ### Start / Stop
 
@@ -63,30 +73,38 @@ make status   # show container + gateway status
 make logs     # tail container logs
 ```
 
+### Send Messages
+
+```bash
+# Set the gateway URL (add to ~/.zshrc to persist)
+export OPENCLAW_GATEWAY_URL=ws://localhost:18790
+
+# Send a message
+openclaw agent --agent main -m "review this PR"
+
+# Or open the TUI
+make chat
+```
+
+**Recommended: add a shell alias to `~/.zshrc`:**
+
+```bash
+alias owc="OPENCLAW_GATEWAY_URL=ws://localhost:18790 openclaw agent --agent main"
+```
+
+Then just: `owc -m "hello"`
+
+You can also source the included connect script:
+
+```bash
+source .openclaw-docker-connect
+openclaw agent --agent main -m "hello"
+```
+
 ### Shell Access
 
 ```bash
 make shell    # sh into the running container
-```
-
-### CLI Connection
-
-Point your host CLI at the container:
-
-```bash
-export OPENCLAW_GATEWAY_URL=ws://localhost:18790
-export OPENCLAW_GATEWAY_TOKEN=<your-token>
-```
-
-Add these to your `~/.zshrc` or `~/.bashrc` to persist across sessions.
-
-Then use the CLI normally:
-
-```bash
-openclaw gateway health     # check gateway is reachable
-openclaw gateway status     # full status
-openclaw tui                # terminal UI
-openclaw agent --message "Review this PR" --deliver
 ```
 
 ## What Persists
@@ -109,10 +127,7 @@ Everything under `/home/node/.openclaw` lives in the `openclaw-work-state` Docke
 Edit workspace files directly in the volume:
 
 ```bash
-# Open a shell in the container
 make shell
-
-# Edit workspace files
 vi ~/.openclaw/workspace/USER.md
 vi ~/.openclaw/workspace/SOUL.md
 ```
@@ -147,9 +162,8 @@ This rebuilds the image (pulling the latest `openclaw` from npm) and restarts th
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key |
-| `OPENCLAW_GATEWAY_TOKEN` | Yes | Shared secret for CLI ↔ gateway auth |
 
-These are stored in `.env` (git-ignored, mode 600).
+Stored in `.env` (git-ignored, mode 600).
 
 ## Troubleshooting
 
@@ -162,16 +176,26 @@ docker compose ps      # check container state
 
 ### CLI can't connect
 
-1. Verify the container is running: `make status`
-2. Check env vars are set: `echo $OPENCLAW_GATEWAY_URL`
-3. Verify the token matches: compare `$OPENCLAW_GATEWAY_TOKEN` with `.env`
-4. Test the port: `curl -s http://localhost:18790` (should get a WebSocket upgrade error — that's fine, it means the port is reachable)
+1. Verify the container is running and healthy: `make status`
+2. Check the gateway URL is set: `echo $OPENCLAW_GATEWAY_URL`
+3. Test the port: `curl -s http://localhost:18790` (should get a WebSocket upgrade error — that means the port is reachable)
+4. Check container logs: `make logs`
 
-### Gateway health check fails
+### Gateway health check fails inside the container
 
 ```bash
-# Check gateway health from inside the container
 docker compose exec openclaw-work openclaw gateway health
+```
+
+### socat proxy not working
+
+```bash
+# Check if socat is running inside the container
+docker compose exec openclaw-work ps aux | grep socat
+
+# Check if the gateway is listening on 18788
+docker compose exec openclaw-work netstat -tlnp 2>/dev/null || \
+  docker compose exec openclaw-work ss -tlnp
 ```
 
 ### Permission issues
@@ -196,29 +220,22 @@ make clean    # stops container + removes volume (with confirmation)
 bash setup.sh # start fresh
 ```
 
-## Security Notes
-
-- The gateway port is bound to **127.0.0.1 only** — it's not accessible from other machines on your network
-- **Token auth** is enabled by default — the CLI must present the correct token to connect
-- The `.env` file has **mode 600** — only your user can read it
-- API keys are passed via environment variables, never baked into the image
-- The container runs as a **non-root user** (`node`)
-
 ## Project Structure
 
 ```
 .
-├── Dockerfile          # Container image definition
-├── docker-compose.yml  # Service orchestration
-├── entrypoint.sh       # Container startup script
-├── setup.sh            # Interactive first-run setup
-├── Makefile            # Convenience targets
-├── seed/               # Default workspace files
+├── Dockerfile                  # Container image definition
+├── docker-compose.yml          # Service orchestration
+├── entrypoint.sh               # Container startup (socat + gateway)
+├── setup.sh                    # Interactive first-run setup
+├── Makefile                    # Convenience targets
+├── .openclaw-docker-connect    # Source this to set env vars for CLI
+├── seed/                       # Default workspace files
 │   ├── AGENTS.md
 │   ├── HEARTBEAT.md
 │   ├── SOUL.md
 │   └── USER.md
-├── .env.example        # Template for .env
+├── .env.example                # Template for .env
 ├── .gitignore
 └── README.md
 ```
