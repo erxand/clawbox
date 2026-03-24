@@ -159,11 +159,27 @@ This rebuilds the image (pulling the latest `openclaw` from npm) and restarts th
 
 ## Environment Variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | Yes | — | Your Anthropic API key |
+| `OPENCLAW_DEFAULT_MODEL` | No | `anthropic/claude-haiku-4-5` | LLM model for the agent (only applied on first run / fresh volume) |
 
 Stored in `.env` (git-ignored, mode 600).
+
+**Changing the model on an existing volume:**
+
+```bash
+# Shell into the container and use the config command
+make shell
+openclaw config set agents.defaults.model.primary anthropic/claude-sonnet-4-6
+```
+
+**Example `.env` to use Sonnet instead of Haiku:**
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-...
+OPENCLAW_DEFAULT_MODEL=anthropic/claude-sonnet-4-6
+```
 
 ## Troubleshooting
 
@@ -201,6 +217,16 @@ docker compose exec openclaw-work netstat -tlnp 2>/dev/null || \
 ### Permission issues
 
 The container runs as `node` (uid 1000). If you mount host directories instead of Docker volumes, ensure they're owned by uid 1000.
+
+### Container doesn't restart after machine reboot
+
+The default `restart: "no"` policy is intentional for development use — you control when the container runs. For always-on/production usage, change it in `docker-compose.yml`:
+
+```yaml
+services:
+  openclaw-work:
+    restart: unless-stopped   # or always
+```
 
 ### Out of memory
 

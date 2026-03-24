@@ -75,12 +75,17 @@ upgrade: ## Rebuild image with latest openclaw and restart
 		sleep 3; \
 	done
 
-clean: ## Stop container and remove volume (destructive!)
-	@echo "This will STOP the container and DELETE all OpenClaw data."
-	@read -p "Are you sure? [y/N] " confirm; \
-	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
+clean: ## Stop container and remove volume (destructive! FORCE=1 skips confirmation)
+	@if [ "$(FORCE)" = "1" ]; then \
 		$(COMPOSE) down -v; \
 		echo "Cleaned."; \
 	else \
-		echo "Aborted."; \
+		echo "This will STOP the container and DELETE all OpenClaw data."; \
+		read -p "Are you sure? [y/N] " confirm; \
+		if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
+			$(COMPOSE) down -v; \
+			echo "Cleaned."; \
+		else \
+			echo "Aborted."; \
+		fi; \
 	fi
