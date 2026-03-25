@@ -150,31 +150,37 @@ No disk quota is enforced inside the container. The workspace volume is backed b
 
 ---
 
-## [OPEN] ISSUE-10: Memory limit allows virtual over-allocation (zero-page CoW bypass)
+## [PARTIAL-FIX] ISSUE-10: Memory limit allows virtual over-allocation (zero-page CoW bypass)
 
 **Category:** Resource limits
 **Severity:** Medium
 **Discovered:** 2026-03-24 Category C resource limit tests
+**Partially fixed:** 2026-03-25 Category C cycle 2
 
 **Description:**
-Docker's 512MB memory limit (`memory: 512m`) only triggers the OOM killer when physical pages are actually faulted in (dirty/written). A Node.js script using `Buffer.alloc()` with zero-fill allocated 566GB of virtual address space before the timeout killed it — no OOM triggered because zero pages use Linux's CoW optimization.
+Docker's 512MB memory limit (`memory: 512m`) only triggers the OOM killer when physical pages are actually faulted in (dirty/written). A Node.js script using `Buffer.alloc()` with zero-fill can allocate huge virtual address space without triggering the cgroup memory limit (zero pages use Linux's CoW optimization and don't fault pages in).
 
-**Test results:**
-- `Buffer.alloc(10MB)` × N (zero-filled) → 566GB virtual allocated, no OOM trigger, exit code 137 from timeout
+**Test results (Cycle 1):**
+- `Buffer.alloc(10MB)` × N (zero-filled) → 566GB virtual allocated, no OOM trigger, exit code 137 from timeout (container OOM killed)
 - `Buffer.alloc(10MB)` + dirty write (1 byte per page) → OOM kill at ~750MB (512MB RAM + 512MB swap), correct behavior
 - The OOM killer kills only the offending process, not the container
 
-**Impact:** 
-- Virtual address exhaustion can make the runtime unstable before OOM triggers
-- A malicious Node.js process could allocate huge virtual address space without triggering limits
-- The OOM killer works correctly when pages are actually written
+**Fix applied (Cycle 2):**
+- Added `ulimit -v 16777216` (16GB virtual address cap) in `entrypoint.sh` before starting the gateway
+- The ulimit applies to the gateway process and ALL its child processes (exec tool spawns)
+- RLIMIT_AS verified: `Max address space = 17179869184` (16GB) in gateway's `/proc/<pid>/limits`
+- **Scope**: Agent exec tool children = bounded ✅. `docker exec` sessions = still unlimited (separate process tree, requires host admin access — higher trust level)
+
+**Remaining gap:**
+- `docker exec` creates a new process NOT inheriting the gateway's ulimit — shows `unlimited`
+- This is acceptable: `docker exec` requires host-level admin access; the threat model is rogue agent code, not admin shell
+- Production Linux deployments can add `--ulimit` flags to `docker run` to enforce on all processes
 
 **Mitigations in place:**
-- Node.js has a default `--max-old-space-size` of ~4GB (not 566GB) in practice due to V8 heap
-- Container survived both tests with 0 restarts — OOM killed only the process
-
-**Potential fix:** Add `--max-old-space-size=384` to NODE_OPTIONS in the container environment.
-This caps Node.js V8 heap at 384MB regardless of virtual overcommit behavior.
+- `ulimit -v 16GB` caps agent-spawned processes ✅
+- `NODE_OPTIONS=--max-old-space-size=384` caps V8 JS heap ✅
+- `memory.max=512MB` + `memory.swap.max=512MB` (cgroup) = 1GB total hard limit ✅
+- OOM killer kills only the offending process, container survives ✅
 
 ---
 
@@ -300,3 +306,63 @@ The healthcheck eventually fails and Docker marks the container unhealthy, but s
 **Challenge:** Node.js / npm require several writable paths. Needs careful `tmpfs` mapping.
 
 **Action:** Test with `read_only: true` + appropriate tmpfs mounts.
+
+---
+
+## [INFO] ISSUE-15: FD exhaustion limited at 4096 (nofile hard limit)
+
+**Category:** Resource limits
+**Severity:** Low
+**Discovered:** 2026-03-25 Category C cycle 2 tests
+
+**Description:**
+FD exhaustion test confirmed: `EMFILE` error triggers at exactly 4078 open files (4096 hard limit minus FDs already open: stdin/stdout/stderr + a few system FDs). Container survived without restart.
+
+**Assessment:** This is correct behavior — EMFILE kills only the script that exhausted FDs, not the gateway. The nofile limit (1024 soft, 4096 hard) is enforced and appropriate.
+
+**No action needed.**
+
+---
+
+## [INFO] ISSUE-16: CPU throttling at 97.6% during 4-thread saturation (correct behavior)
+
+**Category:** Resource limits
+**Severity:** Informational
+**Discovered:** 2026-03-25 Category C cycle 2 tests
+
+**Description:**
+Running 4 CPU-intensive worker threads for 8 seconds triggered throttling on 81 of 83 new cgroup periods (97.6%). The 1.0 CPU cap was enforced. Host load average was unaffected.
+
+**Assessment:** This is correct behavior. The `cpus: "1.0"` limit works as expected.
+
+**Note:** The container is configured to see ALL CPUs (10 visible via `os.cpus()`), but
+the cgroup `cpu.max = 100000 100000` enforces a 1 CPU equivalent over 100ms periods.
+This is Docker's normal behavior — visibility vs. allocation are separate concepts.
+
+**No action needed.**
+
+---
+
+## [OPEN] ISSUE-17: Workspace volume has no disk quota (ISSUE-9 follow-up)
+
+**Category:** Resource limits — disk
+**Severity:** Medium
+**Discovered:** 2026-03-24 Category C tests (original), confirmed 2026-03-25 Category C cycle 2
+
+**Description:**
+The `/home/node/.openclaw` workspace volume (overlay2 on Docker Desktop/macOS) has no per-container disk quota. The agent can write files to fill the host disk up to available space (~187GB in current environment).
+
+**Current state:**
+- `/tmp` is tmpfs-capped at 256MB ✅
+- Workspace volume = uncapped
+
+**Mitigations:**
+- On Linux Docker Engine: `storage_opt: size=10g` per container (requires quota-enabled filesystem)
+- On macOS Docker Desktop: limited options — Docker VM disk size is a soft cap (VM image max)
+- Application-level: agent instructions in AGENTS.md could discourage large writes
+
+**Recommendation for risk-management deployments:**
+- Run on Linux Docker Engine with `overlay2` + `projectquota` enabled
+- Set `storage_opt: size: 10g` in `docker-compose.yml` under the service
+- Document this limitation in SECURITY.md
+

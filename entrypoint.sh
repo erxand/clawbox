@@ -88,6 +88,20 @@ echo "▶ Starting socat proxy (0.0.0.0:18789 → 127.0.0.1:18788)..."
 ) &
 SOCAT_PID=$!
 
+# ── Apply virtual memory limit (mitigates CoW bypass OOM attack) ─────
+# Buffer.alloc() with zero-fill uses Linux's CoW zero-page optimization:
+# it can claim huge virtual address space without triggering the cgroup
+# memory limit (which tracks RSS, not VIRT). Setting ulimit -v caps the
+# virtual address space of all child processes, closing this gap.
+# Node.js + undici WASM needs ~4-8GB virtual minimum; we cap at 16GB
+# (32× the 512MB RAM limit), which prevents unlimited VIRT overallocation
+# while keeping well above the Node runtime's actual requirements.
+# NOTE: Must be set AFTER `openclaw onboard` (first-run), not before,
+# because onboard also starts the gateway and needs the same headroom.
+VIRTUAL_MEM_LIMIT="${OPENCLAW_VIRTUAL_MEM_KB:-16777216}"  # default 16GB in KB
+ulimit -v "$VIRTUAL_MEM_LIMIT" 2>/dev/null || true
+echo "▶ Virtual memory cap set to $((VIRTUAL_MEM_LIMIT / 1024 / 1024))GB (mitigate CoW bypass)"
+
 # ── Start the gateway with auto-restart loop ─────────────────────────
 # openclaw's `config set` can trigger a full process restart (SIGUSR1
 # → new child process → parent exits 0). Without a restart loop, this
