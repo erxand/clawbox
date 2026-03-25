@@ -75,8 +75,17 @@ fi
 # mapping (host 127.0.0.1:18790 → container :18789) can reach it.
 # From the CLI's perspective the URL is ws://localhost:18790 — loopback —
 # so OpenClaw's CLI skips device identity/pairing automatically.
+# socat is wrapped in a restart loop so that if it dies (e.g. SIGKILL
+# during a process flood) it automatically recovers instead of making
+# the container unreachable from the host.
 echo "▶ Starting socat proxy (0.0.0.0:18789 → 127.0.0.1:18788)..."
-socat TCP-LISTEN:18789,bind=0.0.0.0,fork,reuseaddr TCP:127.0.0.1:18788 &
+(
+  while true; do
+    socat TCP-LISTEN:18789,bind=0.0.0.0,fork,reuseaddr TCP:127.0.0.1:18788
+    echo "▶ socat exited — restarting in 1s..."
+    sleep 1
+  done
+) &
 SOCAT_PID=$!
 
 # ── Start the gateway with auto-restart loop ─────────────────────────

@@ -178,6 +178,36 @@ This caps Node.js V8 heap at 384MB regardless of virtual overcommit behavior.
 
 ---
 
+## [FIXED] ISSUE-11: socat not in restart loop — container becomes a brick if socat dies
+
+**Category:** Resilience
+**Severity:** Medium
+**Discovered:** 2026-03-24 Category E recovery and resilience tests
+
+**Description:**
+socat was started with a bare `socat ... &` — no restart loop. If socat was killed (e.g., by a process flood consuming the PID namespace, an OOM event, or a direct `pkill socat`), the container kept running but ALL CLI connections from the host were permanently severed. The gateway kept running but was unreachable. Only `docker compose restart` could recover.
+
+**Test result:**
+- `docker exec openclaw-work pkill -f socat` → container stayed up, CLI returned "gateway closed (1006 abnormal closure)"
+- Container kept running, gateway kept running, but host had no path to it
+
+**Fix (2026-03-24):** Wrapped socat in a while loop in entrypoint.sh (mirroring the existing gateway restart loop). socat now auto-restarts after 1s if it dies.
+```sh
+(
+  while true; do
+    socat TCP-LISTEN:18789,bind=0.0.0.0,fork,reuseaddr TCP:127.0.0.1:18788
+    echo "▶ socat exited — restarting in 1s..."
+    sleep 1
+  done
+) &
+```
+
+**Verification:**
+- `pkill -f socat` → socat restarted, CLI immediately reconnected
+- Agent responded SOCAT_RESTART_OK with 0 container restarts
+
+---
+
 ## [OPEN] ISSUE-8: No read-only root filesystem
 
 **Category:** Security — filesystem hardening
