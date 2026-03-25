@@ -25,6 +25,7 @@ services:
         limits:
           memory: 512m
           cpus: "1.0"
+          pids: 512   # Kernel cgroup PID cap (second layer beyond nproc ulimit)
 
     # ── Security hardening ──────────────────────────────────────────
     # Drop ALL Linux capabilities then add back only what's needed.
@@ -48,11 +49,6 @@ services:
     # Disable inter-container communication (container can't reach other containers)
     # The container only needs outbound internet (Anthropic API) + loopback
     network_mode: bridge
-
-    # Hard cap on total processes/threads at cgroup level (kernel-enforced, not
-    # just per-user ulimit). Provides a second layer against fork bombs on top
-    # of the nproc ulimit below.
-    pids_limit: 512
 
     # Process/file descriptor limits — prevent runaway forks or FD exhaustion
     ulimits:
