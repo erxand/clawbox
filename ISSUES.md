@@ -522,3 +522,47 @@ Contains ANTHROPIC_API_KEY in plaintext. Consistent across all three test cycles
 3. Accept as inherent risk if container is trusted (single-user deployment)
 
 **Status:** INFO — inherent behavior, documented, awaiting upstream Docker secrets integration.
+
+---
+
+## [INFO] ISSUE-22: /proc/net readable — container can enumerate its own network topology
+
+**Category:** Security — /proc/net visibility
+**Severity:** Low / expected
+**Discovered:** 2026-03-25 Category B cycle 4
+
+**Description:**
+`/proc/net/tcp` and `/proc/net/fib_trie` are readable from inside the container. A container process (or agent via exec tool) can:
+- Enumerate open listening ports (tcp entries): ports 18788, 18789, 3000, etc.
+- See the container's routing table via fib_trie
+
+**What's isolated:**
+- The container only sees its own network namespace — no host TCP connections or host routing table
+- PID namespace isolation confirmed: container sees only its own PIDs (1, 7, 161, 162, 163, 171, 500)
+- `nsenter` namespace escape attempt blocked: `Operation not permitted`
+
+**Risk:** Low — only exposes the container's own network state, not the host's. An agent with exec access can discover internal ports (which are visible via process listing anyway).
+
+**Recommendation:** No action required. This is standard Linux container behavior. Document for awareness.
+
+**Status:** INFO — expected behavior, no new action needed.
+
+---
+
+## [INFO] ISSUE-23: Agent can read ANTHROPIC_API_KEY via exec tool (cycle 4 confirmation)
+
+**Category:** Security — API key exposure via exec tool
+**Severity:** Medium (consistent with ISSUE-2 / ISSUE-21 — this is cycle 4 reconfirmation)
+**Discovered:** Confirmed cycles 1–4 consistently
+
+**Description:**
+`cat /proc/1/environ | tr '\0' '\n' | grep ANTHROPIC` executed via the agent's exec tool returns the full API key. The agent reported back `ANTHROPIC_API_KEY=sk-ant-oat01` as expected.
+
+This confirms that any prompt injection or compromised agent session can exfiltrate the API key through the exec tool path.
+
+**Consolidated recommendation:**
+1. Use Docker secrets instead of env vars (removes key from /proc/1/environ)
+2. Add output filtering in the gateway to redact API key patterns in exec output (upstream feature)
+3. Scope API keys to read-only / restricted permissions where provider allows
+
+**Status:** INFO — consistent finding across all 4 cycles, documented. Medium severity, inherent to env var model.
