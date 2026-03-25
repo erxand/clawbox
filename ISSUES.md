@@ -419,3 +419,68 @@ The `/home/node/.openclaw` workspace volume (overlay2 on Docker Desktop/macOS) h
 - Set `storage_opt: size: 10g` in `docker-compose.yml` under the service
 - Document this limitation in SECURITY.md
 
+
+## [FIXED] BUG-13: socat restart loop broken by `set -e` — SIGTERM exits the while loop
+
+**Category:** Resilience — socat restart loop
+**Severity:** High
+**Discovered:** 2026-03-25 Category E cycle 2
+
+**Description:**
+`entrypoint.sh` uses `set -eu` at the top. The socat restart loop runs in a background subshell:
+```sh
+(
+  while true; do
+    socat TCP-LISTEN:18789,...
+    sleep 1
+  done
+) &
+```
+When `pkill -f socat` (or socat dying from any cause) results in socat exiting with a non-zero
+exit code (e.g. 143 = SIGTERM, 137 = SIGKILL), `set -e` causes the subshell to abort immediately
+instead of continuing the while loop. The background subshell disappears; socat is never restarted.
+Host loses all connectivity to the container gateway with no recovery path except `docker compose restart`.
+
+This bug was in the code since the socat restart loop was added (commit c32015c), but was never
+actually confirmed working — the cycle 1 Category E test only ran `docker compose restart` to
+recover, which masks the issue.
+
+**Fix (commit pending):**
+Added `set +e` and `|| true` inside the socat subshell:
+```sh
+(
+  set +e
+  while true; do
+    socat TCP-LISTEN:18789,...  || true
+    echo "▶ socat exited — restarting in 1s..."
+    sleep 1
+  done
+) &
+```
+
+**Verification:**
+- `pkill -f socat` → socat PID changes from 142 to 203 within 2s ✅
+- CLI agent call after kill → `SOCAT_RESTART_LOOP_FIXED` ✅
+- Container: 0 restarts, healthy ✅
+
+---
+
+## [INFO] ISSUE-19: Gateway restart window is ~4s — rapid kill+reconnect (1s gap) falls back to embedded
+
+**Category:** Resilience — reconnect timing
+**Severity:** Low / expected behavior
+**Discovered:** 2026-03-25 Category E cycle 2
+
+**Description:**
+Gateway restart loop takes ~4-5s to bring a new gateway process to a ready state. If a CLI
+call is made within 1s of killing the gateway, the CLI sees "gateway closed (1006)" and falls
+back to the embedded model for that call. Any call made 4s+ after kill connects to the restarted
+gateway correctly.
+
+**Status:** Expected behavior. Not a bug. The restart window is inherent to Node.js startup time.
+Documented for operator awareness.
+
+**Recommendation:**
+If resilience to rapid kill is required, consider health-check-based routing or a supervisor
+that delays CLI calls until gateway ready.
+

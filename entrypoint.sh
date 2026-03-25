@@ -80,8 +80,11 @@ fi
 # the container unreachable from the host.
 echo "▶ Starting socat proxy (0.0.0.0:18789 → 127.0.0.1:18788)..."
 (
+  # Disable set -e inside this subshell so that socat dying with a
+  # non-zero exit code (e.g. SIGTERM → exit 143) doesn't abort the loop.
+  set +e
   while true; do
-    socat TCP-LISTEN:18789,bind=0.0.0.0,fork,reuseaddr TCP:127.0.0.1:18788
+    socat TCP-LISTEN:18789,bind=0.0.0.0,fork,reuseaddr TCP:127.0.0.1:18788 || true
     echo "▶ socat exited — restarting in 1s..."
     sleep 1
   done
