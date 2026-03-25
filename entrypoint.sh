@@ -88,19 +88,36 @@ echo "▶ Starting socat proxy (0.0.0.0:18789 → 127.0.0.1:18788)..."
 ) &
 SOCAT_PID=$!
 
-# ── Apply virtual memory limit (mitigates CoW bypass OOM attack) ─────
+# ── Apply virtual memory limit to exec-tool children only ────────────
 # Buffer.alloc() with zero-fill uses Linux's CoW zero-page optimization:
 # it can claim huge virtual address space without triggering the cgroup
-# memory limit (which tracks RSS, not VIRT). Setting ulimit -v caps the
-# virtual address space of all child processes, closing this gap.
-# Node.js + undici WASM needs ~4-8GB virtual minimum; we cap at 16GB
-# (32× the 512MB RAM limit), which prevents unlimited VIRT overallocation
-# while keeping well above the Node runtime's actual requirements.
-# NOTE: Must be set AFTER `openclaw onboard` (first-run), not before,
-# because onboard also starts the gateway and needs the same headroom.
-VIRTUAL_MEM_LIMIT="${OPENCLAW_VIRTUAL_MEM_KB:-16777216}"  # default 16GB in KB
-ulimit -v "$VIRTUAL_MEM_LIMIT" 2>/dev/null || true
-echo "▶ Virtual memory cap set to $((VIRTUAL_MEM_LIMIT / 1024 / 1024))GB (mitigate CoW bypass)"
+# memory limit (which tracks RSS, not VIRT). We want to cap rogue scripts
+# spawned via the agent exec tool, but NOT the gateway itself.
+#
+# ⚠️ Problem with ulimit -v in the entrypoint:
+# OpenClaw gateway 2026.3.23+ maps 11-12GB of virtual address space at
+# startup (WASM + V8 + connection pools). Setting ulimit -v here caps
+# the gateway process too, and at 16GB there's not enough headroom for
+# active TLS sessions → "Connection error" on every API call.
+#
+# ✅ Correct approach: export OPENCLAW_VIRTUAL_MEM_KB for the gateway
+# to pass to exec-tool child processes. The gateway itself should read
+# this env var and apply ulimit -v only when forking agent exec shells.
+# Until the gateway supports this natively, we document the gap here.
+#
+# ISSUE-18: exec-tool children don't inherit ulimit -v without gateway support.
+# When resolved: apply ulimit -v only to exec_tool fork paths, not gateway.
+echo "▶ Virtual memory cap: delegated to exec-tool children (ISSUE-18 pending)"
+
+# ── Unset NODE_OPTIONS before starting gateway ───────────────────────
+# NODE_OPTIONS=--max-old-space-size=384 is set in docker-compose.yml to
+# cap heap usage in rogue agent-executed scripts. But the gateway itself
+# inherits this env var, causing GC thrashing at the 384MB heap limit and
+# killing in-flight TLS connections (manifests as "Connection error." on
+# every API call). We unset NODE_OPTIONS here so the gateway gets its own
+# uncapped heap (bounded only by the 512MB cgroup RAM limit). Agent exec
+# tool children will re-inherit NODE_OPTIONS from their environment if set.
+unset NODE_OPTIONS
 
 # ── Start the gateway with auto-restart loop ─────────────────────────
 # openclaw's `config set` can trigger a full process restart (SIGUSR1
