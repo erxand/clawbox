@@ -41,7 +41,7 @@ Loopback-only means: no device on your network (or the internet) can reach these
 - Based on `node:22-alpine` — minimal attack surface vs full Debian
 - No SSH daemon, no cron daemon, no unnecessary services
 
-## Security Test Results (Category B — verified 2026-03-24)
+## Security Test Results (Category B — verified 2026-03-24 cycle 1, re-verified 2026-03-25 cycle 2)
 
 These tests were run against a live container. Results:
 
@@ -52,10 +52,19 @@ These tests were run against a live container. Results:
 | 3 | `mount /dev/sda1 /mnt` | No CAP_SYS_ADMIN | ✅ `permission denied (are you root?)` |
 | 4 | `touch /host-repos/test.txt` | Read-only FS | ✅ `Read-only file system` |
 | 5a | `curl http://172.17.0.1:18789` | Timeout/refused | ✅ Connection refused (exit 7) |
-| 5b | `curl http://host.docker.internal:18789` | Should fail | ⚠️ **HTTP 200 — host control panel reachable** |
-| 6 | `cat /proc/1/environ` | May be visible | ⚠️ **Readable — contains ANTHROPIC_API_KEY** |
-| 7 | Fork bomb (nproc limited) | Contained | ✅ Container survived, nproc=256 enforced |
-| 8 | `find / -perm /6000 -type f` | No setuid bins | ✅ Zero results |
+| 5b | `curl http://host.docker.internal:18789` | Should fail | ⚠️ **HTTP 200 — host control panel reachable (macOS only)** |
+| 5c | `curl http://host.docker.internal:18790` | WS port | ⚠️ **HTTP 200 — WS upgrade endpoint reachable (API token still required)** |
+| 6 | `cat /proc/1/environ` | May be visible | ⚠️ **Readable — contains ANTHROPIC_API_KEY (11 env vars visible)** |
+| 7 | Fork bomb (nproc limited) | Contained | ✅ Container survived, pids_limit=512 + nproc=256 enforced |
+| 8 | `find /usr /bin /sbin -perm -4000 -type f` | No setuid bins | ✅ Zero setuid, zero setgid |
+| 9 | `cat /proc/sysrq-trigger` | Read-only | ✅ Read-only file system (write denied) |
+| 10 | `echo 1 > /proc/sys/kernel/sysrq` | Read-only | ✅ Read-only file system (write denied) |
+| 11 | `iptables -L` | Not installed | ✅ `iptables: not found` |
+| 12 | `/dev` device access | Minimal set | ✅ Only null/zero/random/urandom/tty/pts (no raw disks) |
+| 13 | IPC namespace | Isolated | ✅ Empty message queues, no host IPC visible |
+| 14 | `sudo su` | No sudo | ✅ `sudo: not found` |
+| 15 | CapEff for node process | All zeros | ✅ uid=1000 has no effective capabilities |
+| 16 | `curl https://example.com` (egress) | Unrestricted | ⚠️ **HTTP 200 — full outbound internet access** |
 
 ### Test 5b: host.docker.internal reachability (Docker Desktop macOS)
 
@@ -115,7 +124,12 @@ If the user running Docker has access to the Docker socket, they have effective 
 The openclaw agent can run shell commands inside the container (`exec` tool). This is intentional — it's what makes the coding agent useful. The container is the blast radius limiter. If this is unacceptable, set `OPENCLAW_TOOLS_PROFILE=minimal` to disable exec.
 
 ### Outbound network is unrestricted
-The container can make outbound HTTP/HTTPS calls to any internet address (needed for the Anthropic API and web_search). For stricter environments, add an egress firewall rule or use an outbound proxy with allowlisting.
+The container can make outbound HTTP/HTTPS calls to any internet address (needed for the Anthropic API and web_search). **Verified in cycle 2 testing**: the agent can use its `exec` tool to make arbitrary outbound HTTP requests, including to attacker-controlled endpoints. This creates a data exfiltration surface — any code the agent executes or any injected prompt could send workspace contents outbound.
+
+For stricter environments, add an egress firewall rule or use an outbound proxy with allowlisting. See ISSUE-12.
+
+### Effective capabilities are zero for non-root user (positive finding)
+Although `cap_add` lists `CAP_DAC_OVERRIDE`, `CAP_CHOWN`, etc., all effective capabilities for the `node` process (uid=1000) are `0x0000000000000000`. Linux capabilities only apply to root or processes explicitly granted them via setuid/file capabilities. Running as non-root makes the `cap_add` entries effectively inert — this is actually stronger than it appears. See ISSUE-13.
 
 ## Risk Assessment by Use Case
 

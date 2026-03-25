@@ -208,6 +208,86 @@ socat was started with a bare `socat ... &` — no restart loop. If socat was ki
 
 ---
 
+## [INFO] ISSUE-12: Unrestricted outbound internet access (data exfiltration surface)
+
+**Category:** Security — network egress policy
+**Severity:** Medium (for high-security/risk-management deployments)
+**Discovered:** 2026-03-25 Category B security tests (cycle 2)
+
+**Description:**
+The container has full, unrestricted outbound internet access. Any agent-executed code or tool call can reach arbitrary external endpoints. Verified:
+- `curl https://example.com` → HTTP 200
+- `curl https://httpbin.org/get` → HTTP 200  
+- DNS resolves arbitrary hostnames
+- Agent confirmed outbound via exec tool: `HTTP_STATUS:200`
+
+**Impact:**
+- An agent (or malicious prompt-injected code) could exfiltrate data from the workspace to an external endpoint
+- API key in `/proc/1/environ` could be sent outbound
+- No audit trail for network activity
+
+**What IS restricted:**
+- Inbound connections blocked (ports are loopback-only on host)
+- Container cannot reach other containers via bridge network's 172.17.0.1 (port refused)
+- `host.docker.internal` reaches only loopback-mapped ports on the host (documented in ISSUE-1)
+
+**Risk assessment:**
+The primary use case (agent calling Anthropic API) requires outbound HTTPS to `api.anthropic.com`. Full internet lock-down would break this. However, for risk-management deployments, egress filtering is a meaningful control.
+
+**Recommendations for high-security deployments:**
+1. Use a custom Docker network with `internal: true` + explicit allow rules for Anthropic API
+2. Use an HTTP proxy (squid/nginx) that only allows `*.anthropic.com` and required package registries
+3. Add network policy via iptables or a sidecar proxy container
+4. Monitor network logs for unexpected external connections
+
+---
+
+## [INFO] ISSUE-13: CAP_DAC_OVERRIDE in compose is inert for non-root user (documentation clarification)
+
+**Category:** Security — capability model clarification
+**Severity:** Informational
+**Discovered:** 2026-03-25 Category B security tests (cycle 2)
+
+**Description:**
+The compose file adds `CAP_DAC_OVERRIDE` and other capabilities, but since the container runs as `node` (uid=1000), all effective capabilities are `0x0000000000000000`. Capabilities only apply to root-transitioning processes. The `node` user has no effective capabilities regardless of `cap_add`.
+
+This means:
+- `/etc/shadow` (0640 root:shadow) is unreadable — confirmed ✅
+- `CAP_DAC_OVERRIDE` cannot be exercised by `node` user processes
+- The `cap_add` entries in compose are effectively a no-op for uid=1000
+
+**Impact:** Positive finding — security is actually stronger than the compose config implies. The capability restrictions are belt-AND-suspenders.
+
+**Action:** Update SECURITY.md to document this nuance clearly for auditors.
+
+---
+
+## [INFO] ISSUE-14: Fork bomb recovery requires docker compose restart (self-DoS window)
+
+**Category:** Resource limits — resilience gap
+**Severity:** Low
+**Discovered:** 2026-03-25 Category B security tests (cycle 2) — confirmed from cycle 1
+
+**Description:**
+After a fork bomb (even one that's "contained" by nproc/pids_limit), the container enters a wedged state where `docker exec` returns `sh: can't fork: Resource temporarily unavailable`. This persists for 10-30 seconds while tini reaps zombie processes. During this window, no new commands can run including health check commands.
+
+The healthcheck eventually fails and Docker marks the container unhealthy, but since `restart: "no"`, it doesn't auto-recover. The operator must run `docker compose restart`.
+
+**Impact:**
+- Deliberate fork bomb can create a 10-30s window where the agent is unreachable
+- No auto-recovery without changing restart policy
+
+**Mitigations already in place:**
+- pids_limit: 512 (kernel cgroup)
+- nproc ulimit: 256/512
+
+**Recommendations:**
+- Change `restart: "no"` to `restart: on-failure` or `unless-stopped` for production
+- Consider reducing pids_limit further (256?) to speed up recovery
+- Document in runbook: recovery = `docker compose restart`
+
+---
+
 ## [OPEN] ISSUE-8: No read-only root filesystem
 
 **Category:** Security — filesystem hardening
