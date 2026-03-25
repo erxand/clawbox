@@ -2,19 +2,28 @@
 # https://github.com/openclaw/openclaw
 FROM node:22-alpine
 
-# System deps for openclaw (git for workspace, openssl for token gen)
-RUN apk add --no-cache git tini socat
+# Install system deps
+# - git: workspace operations and repo cloning
+# - tini: proper PID 1 signal handling
+# - socat: loopback→LAN bridge (see entrypoint.sh)
+# - curl: used by healthcheck and agent tooling
+RUN apk add --no-cache git tini socat curl
 
-# Install openclaw globally
+# Remove setuid/setgid bits from all binaries to reduce privilege escalation risk
+RUN find / -xdev -perm /6000 -type f 2>/dev/null | xargs chmod a-s 2>/dev/null || true
+
+# Install openclaw globally as root, then lock down
 RUN npm install -g openclaw
 
-# The node user already exists in node:22-alpine with home /home/node
+# The node user already exists in node:22-alpine (uid=1000, gid=1000)
 # Set up the state directory as a volume mount point
 RUN mkdir -p /home/node/.openclaw && chown -R node:node /home/node/.openclaw
 
+# Make npm global dir owned by node so agent can install packages
+RUN mkdir -p /home/node/.npm-global && chown -R node:node /home/node/.npm-global
+
 VOLUME /home/node/.openclaw
 
-# Default gateway port
 EXPOSE 18789
 
 USER node
@@ -22,6 +31,9 @@ WORKDIR /home/node
 
 ENV NODE_ENV=production
 ENV HOME=/home/node
+# Allow node user to install npm packages without sudo
+ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
+ENV PATH="/home/node/.npm-global/bin:${PATH}"
 
 # Seed files for first-run workspace initialization
 COPY --chown=node:node seed/ /home/node/seed/
@@ -30,5 +42,5 @@ COPY --chown=node:node seed/ /home/node/seed/
 COPY --chown=node:node entrypoint.sh /home/node/entrypoint.sh
 RUN chmod +x /home/node/entrypoint.sh
 
-# tini ensures proper signal handling (PID 1 reaping)
+# tini ensures proper signal handling and zombie reaping (PID 1)
 ENTRYPOINT ["/sbin/tini", "--", "/home/node/entrypoint.sh"]

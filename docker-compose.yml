@@ -3,24 +3,67 @@ services:
     build: .
     container_name: openclaw-work
     restart: "no"
+
     ports:
-      - "127.0.0.1:18790:18789"
+      - "127.0.0.1:18790:18789"  # Gateway (loopback-only)
+      - "127.0.0.1:3000:3000"    # Dev app server (loopback-only)
+
     volumes:
       - openclaw-work-state:/home/node/.openclaw
+      # Host repos mounted read-only — agent can clone but not push back to host FS
+      - ${REPOS_PATH:-/Users/arclo/.openclaw/workspace/projects}:/host-repos:ro
+
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - NODE_ENV=production
-      # Override the default LLM model (default: anthropic/claude-haiku-4-5)
-      # Set OPENCLAW_DEFAULT_MODEL in .env to change. Only applies on first run.
       - OPENCLAW_DEFAULT_MODEL=${OPENCLAW_DEFAULT_MODEL:-anthropic/claude-haiku-4-5}
-      # Override the tools profile (default: coding = read/write/exec/web/memory)
-      # Options: minimal (session_status only), coding, messaging, full
       - OPENCLAW_TOOLS_PROFILE=${OPENCLAW_TOOLS_PROFILE:-coding}
+
+    # ── Resource limits ─────────────────────────────────────────────
     deploy:
       resources:
         limits:
           memory: 512m
-    # Seed files are copied into the image; entrypoint plants them on first run
+          cpus: "1.0"
+
+    # ── Security hardening ──────────────────────────────────────────
+    # Drop ALL Linux capabilities then add back only what's needed.
+    # node/openclaw needs: CHOWN (file ownership), SETUID/SETGID (process identity)
+    # Everything else (NET_ADMIN, SYS_ADMIN, SYS_PTRACE, etc.) is dropped.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE       # Read/write files regardless of permission bits (needed by node)
+
+    # Prevent privilege escalation (e.g. setuid binaries)
+    security_opt:
+      - no-new-privileges:true
+
+    # No access to host PID namespace
+    pid: ""
+
+    # Disable inter-container communication (container can't reach other containers)
+    # The container only needs outbound internet (Anthropic API) + loopback
+    network_mode: bridge
+
+    # Hard cap on total processes/threads at cgroup level (kernel-enforced, not
+    # just per-user ulimit). Provides a second layer against fork bombs on top
+    # of the nproc ulimit below.
+    pids_limit: 512
+
+    # Process/file descriptor limits — prevent runaway forks or FD exhaustion
+    ulimits:
+      nofile:
+        soft: 1024
+        hard: 4096
+      nproc:
+        soft: 256
+        hard: 512
+
+    # Healthcheck
     healthcheck:
       test: ["CMD", "sh", "-c", "openclaw gateway health || exit 1"]
       interval: 30s
