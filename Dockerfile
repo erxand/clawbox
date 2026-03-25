@@ -6,20 +6,19 @@ FROM node:22-alpine
 # - git: workspace operations and repo cloning
 # - tini: proper PID 1 signal handling
 # - socat: loopback→LAN bridge (see entrypoint.sh)
-# - curl: used by healthcheck and agent tooling
+# - curl: used by agent tooling
 RUN apk add --no-cache git tini socat curl
 
 # Remove setuid/setgid bits from all binaries to reduce privilege escalation risk
 RUN find / -xdev -perm /6000 -type f 2>/dev/null | xargs chmod a-s 2>/dev/null || true
 
-# Install openclaw globally as root, then lock down
+# Install openclaw globally
 RUN npm install -g openclaw
 
 # The node user already exists in node:22-alpine (uid=1000, gid=1000)
-# Set up the state directory as a volume mount point
 RUN mkdir -p /home/node/.openclaw && chown -R node:node /home/node/.openclaw
 
-# Make npm global dir owned by node so agent can install packages
+# Make npm global dir owned by node so agent can install packages without sudo
 RUN mkdir -p /home/node/.npm-global && chown -R node:node /home/node/.npm-global
 
 VOLUME /home/node/.openclaw
@@ -31,7 +30,6 @@ WORKDIR /home/node
 
 ENV NODE_ENV=production
 ENV HOME=/home/node
-# Allow node user to install npm packages without sudo
 ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
 ENV PATH="/home/node/.npm-global/bin:${PATH}"
 
@@ -42,5 +40,4 @@ COPY --chown=node:node seed/ /home/node/seed/
 COPY --chown=node:node entrypoint.sh /home/node/entrypoint.sh
 RUN chmod +x /home/node/entrypoint.sh
 
-# tini ensures proper signal handling and zombie reaping (PID 1)
 ENTRYPOINT ["/sbin/tini", "--", "/home/node/entrypoint.sh"]

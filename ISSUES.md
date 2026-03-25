@@ -484,3 +484,41 @@ Documented for operator awareness.
 If resilience to rapid kill is required, consider health-check-based routing or a supervisor
 that delays CLI calls until gateway ready.
 
+
+---
+
+## [INFO] ISSUE-20: fork bomb recovery faster in cycle 3 — docker exec stays accessible after 5s
+
+**Category:** Resilience — fork bomb containment
+**Severity:** Low / expected behavior
+**Discovered:** 2026-03-25 Category B cycle 3
+
+**Description:**
+In cycle 3, fork bomb was run inside container via `timeout 10s` wrapper. After the 10s
+timeout, `docker exec` returned successfully after 5s wait (compared to requiring `docker
+compose restart` in previous cycles). This suggests tini's zombie reaping clears blocked
+processes faster when the bomb is timeout-bounded. Container remained accessible, 0 restarts.
+
+**Notes:**
+- pids_limit=512 and nproc=256 both held — no process escaped the container
+- Container status: running, restarts: 0
+- Recovery: passive (no restart needed this cycle)
+
+---
+
+## [INFO] ISSUE-21: /proc/1/environ consistently exposes ANTHROPIC_API_KEY (cycle 3 confirmation)
+
+**Category:** Security — environment variable exposure
+**Severity:** Medium (inherent to Docker env var model)
+**Discovered:** Cycle 1 (ISSUE-2), reconfirmed cycles 2 and 3
+
+**Description:**
+`/proc/1/environ` is readable by the `node` user (uid=1000) because PID 1 runs as `node`.
+Contains ANTHROPIC_API_KEY in plaintext. Consistent across all three test cycles.
+
+**Mitigation options documented in SECURITY.md:**
+1. Docker secrets (replaces env vars with file-mounted secrets)
+2. External secrets manager (Vault, AWS SSM) with runtime injection
+3. Accept as inherent risk if container is trusted (single-user deployment)
+
+**Status:** INFO — inherent behavior, documented, awaiting upstream Docker secrets integration.

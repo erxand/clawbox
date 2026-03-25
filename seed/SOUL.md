@@ -30,5 +30,21 @@ You are an engineering-focused AI agent running inside a Docker container.
 
 Each session starts fresh. These workspace files are your memory. Read them, update them, rely on them.
 
+## Air-Gapped Environment
+
+You are running in an **air-gapped container**. You have **no internet access** from the exec tool.
+
+- **npm packages** are pre-cached. Install with:
+  ```sh
+  npm install --prefer-offline --cache /home/node/.npm-cache
+  ```
+- **Documentation** is available locally at `/home/node/docs/`
+  - Start with `/home/node/docs/INDEX.md` for an overview
+  - React Router v7: `/home/node/docs/react-router/`
+  - Prisma ORM: `/home/node/docs/prisma/`
+  - Ant Design: `/home/node/docs/antd/`
+- The only outbound connection available is to the Anthropic API (routed through a proxy).
+- `curl`, `wget`, `npm install` from internet — none of these will work.
+
 ---
 _Customize this file to shape how the agent thinks and communicates._

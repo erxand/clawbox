@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+# Clear any stale NODE_OPTIONS that reference removed proxy-bootstrap.js
+export NODE_OPTIONS=""
+
 OPENCLAW_DIR="$HOME/.openclaw"
 WORKSPACE_DIR="$OPENCLAW_DIR/workspace"
 
@@ -14,7 +17,7 @@ if [ ! -f "$OPENCLAW_DIR/openclaw.json" ]; then
     --auth-choice anthropic-api-key \
     --anthropic-api-key "${ANTHROPIC_API_KEY:-placeholder}" \
     --gateway-auth token \
-    --gateway-token "bootstrap-init-token" \
+    --gateway-token "openclaw-docker" \
     --gateway-bind loopback \
     --no-install-daemon \
     --skip-channels \
@@ -40,6 +43,16 @@ if [ ! -f "$OPENCLAW_DIR/openclaw.json" ]; then
   # apply_patch and image_generate (unavailable in this runtime) — not errors.
   TOOLS_PROFILE="${OPENCLAW_TOOLS_PROFILE:-coding}"
   openclaw config set tools.profile "$TOOLS_PROFILE" 2>/dev/null || true
+
+  # ── Deny list: tools the agent should never have access to ──────────
+  # web_search and web_fetch allow arbitrary internet browsing — disable
+  # them by default. Set OPENCLAW_ALLOW_WEB=1 in .env to re-enable.
+  # browser is also denied (no browser runtime in the container anyway).
+  ALLOW_WEB="${OPENCLAW_ALLOW_WEB:-0}"
+  if [ "$ALLOW_WEB" != "1" ]; then
+    echo "▶ Disabling web browsing tools (OPENCLAW_ALLOW_WEB=$ALLOW_WEB)..."
+    openclaw config set tools.deny '["web_search","web_fetch","browser"]' || true
+  fi
 fi
 
 # ── Seed workspace files on first run ────────────────────────────────
@@ -112,15 +125,12 @@ SOCAT_PID=$!
 # When resolved: apply ulimit -v only to exec_tool fork paths, not gateway.
 echo "▶ Virtual memory cap: delegated to exec-tool children (ISSUE-18 pending)"
 
-# ── Unset NODE_OPTIONS before starting gateway ───────────────────────
-# NODE_OPTIONS=--max-old-space-size=384 is set in docker-compose.yml to
-# cap heap usage in rogue agent-executed scripts. But the gateway itself
-# inherits this env var, causing GC thrashing at the 384MB heap limit and
-# killing in-flight TLS connections (manifests as "Connection error." on
-# every API call). We unset NODE_OPTIONS here so the gateway gets its own
-# uncapped heap (bounded only by the 512MB cgroup RAM limit). Agent exec
-# tool children will re-inherit NODE_OPTIONS from their environment if set.
-unset NODE_OPTIONS
+# ── NODE_OPTIONS for gateway ──────────────────────────────────────────
+# NODE_OPTIONS contains --require for proxy-bootstrap.js which the gateway
+# needs to route API calls through the Anthropic-only proxy. We keep it.
+# (Previously this unset NODE_OPTIONS to remove --max-old-space-size=384
+# which caused GC thrashing — that's no longer in docker-compose.yml.)
+# (NODE_OPTIONS intentionally empty — no proxy bootstrap needed)
 
 # ── Start the gateway with auto-restart loop ─────────────────────────
 # openclaw's `config set` can trigger a full process restart (SIGUSR1

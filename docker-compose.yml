@@ -7,27 +7,22 @@ services:
     ports:
       - "127.0.0.1:18790:18789"  # Gateway (loopback-only)
       - "127.0.0.1:3000:3000"    # Dev app server (loopback-only)
+      - "127.0.0.1:3001:3001"    # Dev app server 2 (loopback-only)
 
     volumes:
       - openclaw-work-state:/home/node/.openclaw
-      # Host repos mounted read-only — agent can clone but not push back to host FS
+      # Host repos mounted read-only — agent can clone but cannot write back
       - ${REPOS_PATH:-/Users/arclo/.openclaw/workspace/projects}:/host-repos:ro
-
-    # ── Disk limits ─────────────────────────────────────────────────
-    # tmpfs for /tmp limits ephemeral scratch space (no disk quota on overlay2/Docker Desktop).
-    # Workspace volume quota is not enforced here (no overlay2 projectquota on macOS Docker).
-    # For production Linux deployments, use storage_opt or quota-enabled filesystems.
-    tmpfs:
-      - /tmp:size=256m,mode=1777
 
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - NODE_ENV=production
       - OPENCLAW_DEFAULT_MODEL=${OPENCLAW_DEFAULT_MODEL:-anthropic/claude-haiku-4-5}
       - OPENCLAW_TOOLS_PROFILE=${OPENCLAW_TOOLS_PROFILE:-coding}
-      # Cap Node.js V8 heap to prevent virtual-memory over-allocation bypass of Docker memory limits.
-      # Without this, Buffer.alloc() can claim huge virtual address space without triggering OOM.
-      - NODE_OPTIONS=--max-old-space-size=384
+      # Set to 1 to re-enable web_search, web_fetch, and browser tools.
+      # Default is 0 (disabled) — agent cannot browse the internet.
+      # The agent can still make outbound calls via npm/fetch in code it runs.
+      - OPENCLAW_ALLOW_WEB=${OPENCLAW_ALLOW_WEB:-0}
 
     # ── Resource limits ─────────────────────────────────────────────
     deploy:
@@ -38,29 +33,15 @@ services:
           pids: 512   # Kernel cgroup PID cap (second layer beyond nproc ulimit)
 
     # ── Security hardening ──────────────────────────────────────────
-    # Drop ALL Linux capabilities then add back only what's needed.
-    # node/openclaw needs: CHOWN (file ownership), SETUID/SETGID (process identity)
-    # Everything else (NET_ADMIN, SYS_ADMIN, SYS_PTRACE, etc.) is dropped.
     cap_drop:
       - ALL
     cap_add:
       - CHOWN
       - SETUID
       - SETGID
-      - DAC_OVERRIDE       # Read/write files regardless of permission bits (needed by node)
-
-    # Prevent privilege escalation (e.g. setuid binaries)
+      - DAC_OVERRIDE
     security_opt:
       - no-new-privileges:true
-
-    # No access to host PID namespace
-    pid: ""
-
-    # Disable inter-container communication (container can't reach other containers)
-    # The container only needs outbound internet (Anthropic API) + loopback
-    network_mode: bridge
-
-    # Process/file descriptor limits — prevent runaway forks or FD exhaustion
     ulimits:
       nofile:
         soft: 1024
@@ -68,14 +49,15 @@ services:
       nproc:
         soft: 256
         hard: 512
+    tmpfs:
+      - /tmp:size=256m,mode=1777
 
-    # Healthcheck
     healthcheck:
       test: ["CMD", "sh", "-c", "openclaw gateway health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      start_period: 20s
 
 volumes:
   openclaw-work-state:

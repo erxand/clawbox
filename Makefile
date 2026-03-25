@@ -1,4 +1,4 @@
-.PHONY: start stop status logs shell tui chat backup restore upgrade clean help
+.PHONY: start stop status logs shell tui chat backup restore upgrade build-airgap test-isolation clean help
 
 COMPOSE := docker compose
 CONTAINER := openclaw-work
@@ -79,6 +79,15 @@ upgrade: ## Rebuild image with latest openclaw and restart
 		if [ "$$STATUS" = "healthy" ]; then echo "Container healthy. Run 'make status' to verify."; break; fi; \
 		sleep 3; \
 	done
+
+build-airgap: ## Build the air-gapped image (downloads docs + npm cache)
+	$(COMPOSE) build --no-cache
+
+test-isolation: ## Verify network isolation is working
+	@echo "Testing that container cannot reach internet..."
+	@docker exec $(CONTAINER) sh -c "curl -s --max-time 5 https://example.com" && echo "FAIL: internet accessible" || echo "PASS: internet blocked"
+	@echo "Testing that Anthropic API is reachable via proxy..."
+	@OPENCLAW_GATEWAY_URL=$(GATEWAY_URL) OPENCLAW_GATEWAY_TOKEN=$(GATEWAY_TOKEN) openclaw gateway health && echo "PASS: gateway healthy" || echo "FAIL: gateway unreachable"
 
 clean: ## Stop container and remove volume (destructive! FORCE=1 skips confirmation)
 	@if [ "$(FORCE)" = "1" ]; then \
