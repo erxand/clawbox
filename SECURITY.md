@@ -1,12 +1,12 @@
 # Security Model
 
-This document describes the security design of openclaw-docker and what it does — and does not — protect against. This is especially relevant for companies in regulated or security-sensitive industries.
+This document describes the security design of clawbox and what it does — and does not — protect against. This is especially relevant for companies in regulated or security-sensitive industries.
 
 ## Trust Boundaries
 
 ```
 Host machine
-  └── Docker container (openclaw-work)
+  └── Docker container (clawbox-work)
         ├── openclaw gateway (loopback, auth=none)
         ├── socat proxy (loopback→18789)
         └── Agent workspace (/home/node/.openclaw)
@@ -158,11 +158,11 @@ Although `cap_add` lists `CAP_DAC_OVERRIDE`, `CAP_CHOWN`, etc., all effective ca
 
 ```bash
 # OpenClaw's built-in audit
-docker exec openclaw-work openclaw security audit --deep
+docker exec clawbox-work openclaw security audit --deep
 
 # Check container security posture
-docker inspect openclaw-work | jq '.[0].HostConfig | {Privileged, CapAdd, CapDrop, SecurityOpt, ReadonlyRootfs, NetworkMode}'
+docker inspect clawbox-work | jq '.[0].HostConfig | {Privileged, CapAdd, CapDrop, SecurityOpt, ReadonlyRootfs, NetworkMode}'
 
 # Check for setuid binaries in the container
-docker exec openclaw-work find / -xdev -perm /6000 -type f 2>/dev/null
+docker exec clawbox-work find / -xdev -perm /6000 -type f 2>/dev/null
 ```

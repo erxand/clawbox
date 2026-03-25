@@ -72,7 +72,7 @@ Docker compose had `ulimits.nproc` (per-user process limit) but no `pids_limit` 
 **Discovered:** Earlier sessions
 
 **Description:**
-README.md contains placeholder `https://github.com/your-org/openclaw-docker.git`. Repo not yet published.
+README.md contains placeholder `https://github.com/your-org/clawbox.git`. Repo not yet published.
 
 **Action required:** Xander needs to create the repo and push. No code changes needed.
 
@@ -194,7 +194,7 @@ Docker's 512MB memory limit (`memory: 512m`) only triggers the OOM killer when p
 socat was started with a bare `socat ... &` — no restart loop. If socat was killed (e.g., by a process flood consuming the PID namespace, an OOM event, or a direct `pkill socat`), the container kept running but ALL CLI connections from the host were permanently severed. The gateway kept running but was unreachable. Only `docker compose restart` could recover.
 
 **Test result:**
-- `docker exec openclaw-work pkill -f socat` → container stayed up, CLI returned "gateway closed (1006 abnormal closure)"
+- `docker exec clawbox-work pkill -f socat` → container stayed up, CLI returned "gateway closed (1006 abnormal closure)"
 - Container kept running, gateway kept running, but host had no path to it
 
 **Fix (2026-03-24):** Wrapped socat in a while loop in entrypoint.sh (mirroring the existing gateway restart loop). socat now auto-restarts after 1s if it dies.

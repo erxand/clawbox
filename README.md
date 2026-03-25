@@ -1,4 +1,4 @@
-# OpenClaw Docker
+# Clawbox
 
 Run [OpenClaw](https://github.com/openclaw/openclaw) in a Docker container. One command to set up, persistent state via Docker volumes, and zero-friction CLI connectivity from your host.
 
@@ -12,8 +12,8 @@ Run [OpenClaw](https://github.com/openclaw/openclaw) in a Docker container. One 
 
 ```bash
 # 1. Clone this repo
-git clone https://github.com/your-org/openclaw-docker.git
-cd openclaw-docker
+git clone https://github.com/your-org/clawbox.git
+cd clawbox
 
 # 2. Create .env with your API key
 cp .env.example .env
@@ -24,7 +24,7 @@ bash setup.sh
 
 # 4. Connect your CLI
 export OPENCLAW_GATEWAY_URL=ws://localhost:18790
-export OPENCLAW_GATEWAY_TOKEN=openclaw-docker   # required by CLI when overriding URL (value is ignored — auth=none)
+export OPENCLAW_GATEWAY_TOKEN=clawbox   # required by CLI when overriding URL (value is ignored — auth=none)
 openclaw agent --agent main -m "hello"
 ```
 
@@ -46,7 +46,7 @@ openclaw agent --agent main -m "hello"
 └─────────────────────────┘         └───────────────────────────────────┘
                                              │
                                         Docker Volume
-                                     openclaw-work-state
+                                     clawbox-work-state
 ```
 
 ### Why socat?
@@ -81,7 +81,7 @@ make logs     # tail container logs
 # Note: OPENCLAW_GATEWAY_TOKEN is required by the CLI when overriding the URL.
 # The value doesn't matter (auth=none) — any non-empty string works.
 export OPENCLAW_GATEWAY_URL=ws://localhost:18790
-export OPENCLAW_GATEWAY_TOKEN=openclaw-docker
+export OPENCLAW_GATEWAY_TOKEN=clawbox
 
 # Send a message
 openclaw agent --agent main -m "review this PR"
@@ -94,7 +94,7 @@ make chat
 
 ```bash
 export OPENCLAW_GATEWAY_URL=ws://localhost:18790
-export OPENCLAW_GATEWAY_TOKEN=openclaw-docker
+export OPENCLAW_GATEWAY_TOKEN=clawbox
 alias owc="openclaw agent --agent main"
 ```
 
@@ -103,7 +103,7 @@ Then just: `owc -m "hello"`
 You can also source the included connect script:
 
 ```bash
-source .openclaw-docker-connect
+source .clawbox-connect
 openclaw agent --agent main -m "hello"
 ```
 
@@ -115,7 +115,7 @@ make shell    # sh into the running container
 
 ## What Persists
 
-Everything under `/home/node/.openclaw` lives in the `openclaw-work-state` Docker volume:
+Everything under `/home/node/.openclaw` lives in the `clawbox-work-state` Docker volume:
 
 | Path | Purpose |
 |------|---------|
@@ -141,7 +141,7 @@ vi ~/.openclaw/workspace/SOUL.md
 Or copy files in from the host:
 
 ```bash
-docker cp my-custom-SOUL.md openclaw-work:/home/node/.openclaw/workspace/SOUL.md
+docker cp my-custom-SOUL.md clawbox-work:/home/node/.openclaw/workspace/SOUL.md
 ```
 
 ## Backup & Restore
@@ -149,10 +149,10 @@ docker cp my-custom-SOUL.md openclaw-work:/home/node/.openclaw/workspace/SOUL.md
 ```bash
 # Create a timestamped backup
 make backup
-# → creates backups/openclaw-work-state-20260318-143022.tar.gz
+# → creates backups/clawbox-work-state-20260318-143022.tar.gz
 
 # Restore from a backup
-make restore FILE=backups/openclaw-work-state-20260318-143022.tar.gz
+make restore FILE=backups/clawbox-work-state-20260318-143022.tar.gz
 ```
 
 ## Upgrading OpenClaw
@@ -207,18 +207,18 @@ docker compose ps      # check container state
 ### Gateway health check fails inside the container
 
 ```bash
-docker compose exec openclaw-work openclaw gateway health
+docker compose exec clawbox-work openclaw gateway health
 ```
 
 ### socat proxy not working
 
 ```bash
 # Check if socat is running inside the container
-docker compose exec openclaw-work ps aux | grep socat
+docker compose exec clawbox-work ps aux | grep socat
 
 # Check if the gateway is listening on 18788
-docker compose exec openclaw-work netstat -tlnp 2>/dev/null || \
-  docker compose exec openclaw-work ss -tlnp
+docker compose exec clawbox-work netstat -tlnp 2>/dev/null || \
+  docker compose exec clawbox-work ss -tlnp
 ```
 
 ### Permission issues
@@ -231,7 +231,7 @@ The default `restart: "no"` policy is intentional for development use — you co
 
 ```yaml
 services:
-  openclaw-work:
+  clawbox-work:
     restart: unless-stopped   # or always
 ```
 
@@ -262,7 +262,7 @@ bash setup.sh # start fresh
 ├── entrypoint.sh               # Container startup (socat + gateway)
 ├── setup.sh                    # Interactive first-run setup
 ├── Makefile                    # Convenience targets
-├── .openclaw-docker-connect    # Source this to set env vars for CLI
+├── .clawbox-connect    # Source this to set env vars for CLI
 ├── seed/                       # Default workspace files
 │   ├── AGENTS.md
 │   ├── HEARTBEAT.md

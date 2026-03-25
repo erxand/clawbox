@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ── OpenClaw Docker — First-Run Setup ────────────────────────────────
+# ── Clawbox — First-Run Setup ────────────────────────────────
 # This script gets you from zero to running in one command.
 
 COMPOSE_FILE="docker-compose.yml"
 ENV_FILE=".env"
-VOLUME_NAME="openclaw-docker_openclaw-work-state"
+VOLUME_NAME="clawbox_clawbox-work-state"
 
 # Colors (disabled if not a terminal)
 if [ -t 1 ]; then
@@ -76,14 +76,14 @@ fi
 info "Building container image..."
 docker compose build --quiet
 
-info "Starting openclaw-work..."
+info "Starting clawbox-work..."
 docker compose up -d
 
 # ── Wait for container to be healthy ────────────────────────────────
 echo ""
 info "Waiting for gateway to become healthy (up to 60s)..."
 for i in $(seq 1 30); do
-  STATUS=$(docker inspect --format='{{.State.Health.Status}}' openclaw-work 2>/dev/null || echo "unknown")
+  STATUS=$(docker inspect --format='{{.State.Health.Status}}' clawbox-work 2>/dev/null || echo "unknown")
   if [ "$STATUS" = "healthy" ]; then
     info "Gateway is healthy!"
     break
@@ -91,7 +91,7 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
-STATUS=$(docker inspect --format='{{.State.Health.Status}}' openclaw-work 2>/dev/null || echo "unknown")
+STATUS=$(docker inspect --format='{{.State.Health.Status}}' clawbox-work 2>/dev/null || echo "unknown")
 if [ "$STATUS" != "healthy" ]; then
   warn "Container not yet healthy (status: $STATUS). Check: docker compose logs -f"
 fi
@@ -100,7 +100,7 @@ fi
 
 echo ""
 echo -e "${BOLD}═══════════════════════════════════════════════════${RESET}"
-echo -e "${BOLD} OpenClaw Docker is ready!${RESET}"
+echo -e "${BOLD} Clawbox is ready!${RESET}"
 echo -e "${BOLD}═══════════════════════════════════════════════════${RESET}"
 echo ""
 echo -e "  Gateway:  ${GREEN}ws://localhost:18790${RESET}"
@@ -109,7 +109,7 @@ echo ""
 echo -e "${BOLD}Connect the CLI:${RESET}"
 echo ""
 echo "  export OPENCLAW_GATEWAY_URL=ws://localhost:18790"
-echo "  export OPENCLAW_GATEWAY_TOKEN=openclaw-docker"
+echo "  export OPENCLAW_GATEWAY_TOKEN=clawbox"
 echo "  openclaw agent --agent main -m \"hello\""
 echo ""
 echo -e "  ${DIM}(OPENCLAW_GATEWAY_TOKEN is required by the CLI when overriding the URL;"
@@ -118,7 +118,7 @@ echo ""
 echo -e "${BOLD}Or add to ~/.zshrc for convenience:${RESET}"
 echo ""
 echo "  export OPENCLAW_GATEWAY_URL=ws://localhost:18790"
-echo "  export OPENCLAW_GATEWAY_TOKEN=openclaw-docker"
+echo "  export OPENCLAW_GATEWAY_TOKEN=clawbox"
 echo "  alias owc=\"openclaw agent --agent main\""
 echo ""
 echo -e "${BOLD}Useful commands:${RESET}"

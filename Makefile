@@ -1,13 +1,13 @@
 .PHONY: start stop status logs shell tui chat backup restore upgrade build-airgap test-isolation clean help
 
 COMPOSE := docker compose
-CONTAINER := openclaw-work
-VOLUME := openclaw-docker_openclaw-work-state
+CONTAINER := clawbox-work
+VOLUME := clawbox_clawbox-work-state
 BACKUP_DIR := backups
 GATEWAY_URL := ws://localhost:18790
 # Token value doesn't matter (gateway runs auth=none) but the CLI
 # requires something to be set when using a URL override.
-GATEWAY_TOKEN := openclaw-docker
+GATEWAY_TOKEN := clawbox
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \

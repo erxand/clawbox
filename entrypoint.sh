@@ -17,7 +17,7 @@ if [ ! -f "$OPENCLAW_DIR/openclaw.json" ]; then
     --auth-choice anthropic-api-key \
     --anthropic-api-key "${ANTHROPIC_API_KEY:-placeholder}" \
     --gateway-auth token \
-    --gateway-token "openclaw-docker" \
+    --gateway-token "clawbox" \
     --gateway-bind loopback \
     --no-install-daemon \
     --skip-channels \
@@ -56,15 +56,9 @@ if [ ! -f "$OPENCLAW_DIR/openclaw.json" ]; then
 fi
 
 # ── Configure git identity + GitHub credentials ──────────────────────
-git config --global user.email "arclomedarian.claw@gmail.com"
-git config --global user.name "Arclomedarian"
-if [ -n "${GITHUB_TOKEN:-}" ]; then
-  git config --global credential.helper store
-  printf "protocol=https\nhost=github.com\nusername=arclomedarian\npassword=${GITHUB_TOKEN}\n" \
-    | git credential-store --file /home/node/.git-credentials store
-  git config --global credential.helper "store --file /home/node/.git-credentials"
-  echo "▶ GitHub credentials configured."
-fi
+git config --global user.email "agent@clawbox"
+git config --global user.name "OpenClaw Agent"
+# No GitHub credentials — container agent can clone public repos but cannot push.
 
 # ── Seed workspace files on first run ────────────────────────────────
 # Use a sentinel file to track whether seeding has happened.
@@ -80,8 +74,8 @@ if [ ! -f "$SEED_SENTINEL" ] && [ -d /home/node/seed ]; then
   touch "$SEED_SENTINEL"
   cd "$WORKSPACE_DIR"
   # Ensure git user identity is set for commits
-  git config --global user.email "openclaw-docker@localhost" 2>/dev/null || true
-  git config --global user.name "OpenClaw Docker" 2>/dev/null || true
+  git config --global user.email "clawbox@localhost" 2>/dev/null || true
+  git config --global user.name "Clawbox" 2>/dev/null || true
   if [ -d .git ]; then
     git add -A
     git commit -q -m "Apply custom seed files" 2>/dev/null || true
