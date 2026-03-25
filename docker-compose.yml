@@ -19,6 +19,8 @@ services:
       - NODE_ENV=production
       - OPENCLAW_DEFAULT_MODEL=${OPENCLAW_DEFAULT_MODEL:-anthropic/claude-haiku-4-5}
       - OPENCLAW_TOOLS_PROFILE=${OPENCLAW_TOOLS_PROFILE:-coding}
+      # GitHub credentials — lets the agent clone/push to GitHub repos
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       # Set to 1 to re-enable web_search, web_fetch, and browser tools.
       # Default is 0 (disabled) — agent cannot browse the internet.
       # The agent can still make outbound calls via npm/fetch in code it runs.

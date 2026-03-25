@@ -55,6 +55,17 @@ if [ ! -f "$OPENCLAW_DIR/openclaw.json" ]; then
   fi
 fi
 
+# ── Configure git identity + GitHub credentials ──────────────────────
+git config --global user.email "arclomedarian.claw@gmail.com"
+git config --global user.name "Arclomedarian"
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  git config --global credential.helper store
+  printf "protocol=https\nhost=github.com\nusername=arclomedarian\npassword=${GITHUB_TOKEN}\n" \
+    | git credential-store --file /home/node/.git-credentials store
+  git config --global credential.helper "store --file /home/node/.git-credentials"
+  echo "▶ GitHub credentials configured."
+fi
+
 # ── Seed workspace files on first run ────────────────────────────────
 # Use a sentinel file to track whether seeding has happened.
 # We can't rely on SOUL.md absence because openclaw onboard creates one.
