@@ -13,11 +13,21 @@ services:
       # Host repos mounted read-only — agent can clone but not push back to host FS
       - ${REPOS_PATH:-/Users/arclo/.openclaw/workspace/projects}:/host-repos:ro
 
+    # ── Disk limits ─────────────────────────────────────────────────
+    # tmpfs for /tmp limits ephemeral scratch space (no disk quota on overlay2/Docker Desktop).
+    # Workspace volume quota is not enforced here (no overlay2 projectquota on macOS Docker).
+    # For production Linux deployments, use storage_opt or quota-enabled filesystems.
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - NODE_ENV=production
       - OPENCLAW_DEFAULT_MODEL=${OPENCLAW_DEFAULT_MODEL:-anthropic/claude-haiku-4-5}
       - OPENCLAW_TOOLS_PROFILE=${OPENCLAW_TOOLS_PROFILE:-coding}
+      # Cap Node.js V8 heap to prevent virtual-memory over-allocation bypass of Docker memory limits.
+      # Without this, Buffer.alloc() can claim huge virtual address space without triggering OOM.
+      - NODE_OPTIONS=--max-old-space-size=384
 
     # ── Resource limits ─────────────────────────────────────────────
     deploy:

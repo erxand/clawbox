@@ -126,6 +126,58 @@ No custom seccomp profile is applied. Docker's default seccomp profile is active
 
 ---
 
+## [OPEN] ISSUE-9: No disk quota enforcement (no /tmp tmpfs limit)
+
+**Category:** Resource limits
+**Severity:** Medium
+**Discovered:** 2026-03-24 Category C resource limit tests
+
+**Description:**
+No disk quota is enforced inside the container. The workspace volume is backed by Docker Desktop's overlay2 filesystem on macOS, which doesn't support `storage_opt` quotas. The `/tmp` directory was also unbounded — a rogue process could fill the host disk.
+
+**`dd` test results:**
+- 200MB writes to `/tmp` and workspace: both succeeded with no blocking
+- Larger writes (1500MB) with `/dev/zero` triggered OOM (via memory buffer), not disk quota
+- No disk-space cap was hit — a careful attacker could fill disk without hitting memory limit
+
+**Fix applied (2026-03-24):** Added `tmpfs: [/tmp:size=256m,mode=1777]` to docker-compose.yml.
+- `/tmp` is now a ramdisk capped at 256MB (counts toward memory limit)
+- Workspace volume still has no quota (macOS Docker Desktop limitation)
+
+**Remaining gap:** Workspace volume (`/home/node/.openclaw`) has no disk quota. On Linux with ext4 + project quotas or overlay2 with `size=` option, this can be enforced.
+
+**Action for enterprise:** Use Linux Docker Engine with `--storage-opt size=10G` or quota-enabled filesystem.
+
+---
+
+## [OPEN] ISSUE-10: Memory limit allows virtual over-allocation (zero-page CoW bypass)
+
+**Category:** Resource limits
+**Severity:** Medium
+**Discovered:** 2026-03-24 Category C resource limit tests
+
+**Description:**
+Docker's 512MB memory limit (`memory: 512m`) only triggers the OOM killer when physical pages are actually faulted in (dirty/written). A Node.js script using `Buffer.alloc()` with zero-fill allocated 566GB of virtual address space before the timeout killed it — no OOM triggered because zero pages use Linux's CoW optimization.
+
+**Test results:**
+- `Buffer.alloc(10MB)` × N (zero-filled) → 566GB virtual allocated, no OOM trigger, exit code 137 from timeout
+- `Buffer.alloc(10MB)` + dirty write (1 byte per page) → OOM kill at ~750MB (512MB RAM + 512MB swap), correct behavior
+- The OOM killer kills only the offending process, not the container
+
+**Impact:** 
+- Virtual address exhaustion can make the runtime unstable before OOM triggers
+- A malicious Node.js process could allocate huge virtual address space without triggering limits
+- The OOM killer works correctly when pages are actually written
+
+**Mitigations in place:**
+- Node.js has a default `--max-old-space-size` of ~4GB (not 566GB) in practice due to V8 heap
+- Container survived both tests with 0 restarts — OOM killed only the process
+
+**Potential fix:** Add `--max-old-space-size=384` to NODE_OPTIONS in the container environment.
+This caps Node.js V8 heap at 384MB regardless of virtual overcommit behavior.
+
+---
+
 ## [OPEN] ISSUE-8: No read-only root filesystem
 
 **Category:** Security — filesystem hardening
