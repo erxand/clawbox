@@ -343,6 +343,59 @@ This is Docker's normal behavior — visibility vs. allocation are separate conc
 
 ---
 
+## [FIXED→REVERTED] ISSUE-10 partial fix causes BUG-12: ulimit -v breaks gateway API calls
+
+**Category:** Regression from ISSUE-10 partial fix
+**Severity:** Critical (breaks agent functionality)
+**Discovered:** 2026-03-25 Category D cycle 2 session
+
+**Description:**
+The `ulimit -v 16GB` added to `entrypoint.sh` during ISSUE-10 cycle 2 fix caused the OpenClaw gateway (version 2026.3.23-2) to fail ALL Anthropic API calls with "LLM request failed: network connection error."
+
+**Root cause:**
+OpenClaw 2026.3.23+ maps 11–12GB virtual address space at startup (WASM, V8, connection pools). With ulimit -v = 16GB, only ~5GB headroom remains. When active TLS sessions + connection pools push virtual size higher, the kernel refuses new memory mappings → undici/fetch connections fail at the TCP/TLS level.
+
+**Evidence:**
+- Gateway VmPeak = 11,212,532 KB (~11.2GB) at idle
+- `ulimit -v` = 16,384 MB = 16GB hard cap
+- Direct curl to api.anthropic.com worked; Node.js `fetch()` worked — only gateway's connection pooling hit the limit
+- Removing ulimit -v immediately fixed all API calls
+
+**Fix:**
+Removed `ulimit -v` from entrypoint.sh (commit `b88149a`). Documented as ISSUE-18 (exec-tool children CoW bypass cap needs gateway-level support).
+
+**ISSUE-10 status:**
+- exec-tool children still have uncapped virtual memory (ISSUE-18 pending)
+- Gateway itself is bounded by cgroup memory.max = 512MB (RSS/physical cap)
+- Virtual memory bypass is a residual risk but lower priority than gateway functionality
+
+---
+
+## [OPEN] ISSUE-18: exec-tool children can bypass CoW virtual-memory cap
+
+**Category:** Resource limits — security regression
+**Severity:** Medium
+**Discovered:** 2026-03-25 Category D cycle 2 (BUG-12 investigation)
+
+**Description:**
+The ulimit -v approach for capping virtual memory (ISSUE-10 partial fix) was reverted because it also applies to the gateway process and breaks TLS connections. Without it, agent exec tool children can use `Buffer.alloc()` zero-fill to claim unlimited virtual address space.
+
+**Current status:** exec-tool children have no virtual memory cap.
+
+**Mitigations in place:**
+- cgroup `memory.max = 512MB + 512MB swap = 1GB` physical/RSS cap ✅
+- `NODE_OPTIONS=--max-old-space-size=384` caps V8 heap ✅  
+- OOM killer kills only the offending process ✅
+
+**Correct fix (requires gateway support):**
+The OpenClaw gateway should apply `ulimit -v` only when forking exec-tool child processes (after the gateway itself is fully initialized), not globally. Needs upstream support.
+
+**Workaround for enterprise:**
+1. Use a wrapper script that applies ulimit -v before exec'ing agent processes
+2. Or use Linux cgroups v2 with per-process memory limits on exec-tool children
+
+---
+
 ## [OPEN] ISSUE-17: Workspace volume has no disk quota (ISSUE-9 follow-up)
 
 **Category:** Resource limits — disk
