@@ -12,7 +12,7 @@ Run [OpenClaw](https://github.com/openclaw/openclaw) in a Docker container. One 
 
 ```bash
 # 1. Clone this repo
-git clone https://github.com/your-org/clawbox.git
+git clone https://github.com/erxand/clawbox.git
 cd clawbox
 
 # 2. Create .env with your API key
