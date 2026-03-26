@@ -19,7 +19,7 @@ services:
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - NODE_ENV=production
-      - OPENCLAW_DEFAULT_MODEL=${OPENCLAW_DEFAULT_MODEL:-anthropic/claude-haiku-4-5}
+      - OPENCLAW_DEFAULT_MODEL=${OPENCLAW_DEFAULT_MODEL:-anthropic/claude-opus-4-6}
       - OPENCLAW_TOOLS_PROFILE=${OPENCLAW_TOOLS_PROFILE:-coding}
       # Note: no GITHUB_TOKEN here intentionally — container agent should not
       # have push/pull access to GitHub repos. Repo management stays with the human.
