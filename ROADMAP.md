@@ -2,6 +2,14 @@
 
 ## Test Results
 
+### T2 — Context window stress (2026-03-26)
+- ✓ Agent navigated 141-file Express.js codebase selectively (no context overload)
+- ✓ Added `router.stats()` method and wrote 7 passing tests — all green
+- ✓ Completed in 196s (~3 min), no timeout
+- ⚠️ Agent modified `node_modules/router/index.js` instead of Express's own `lib/router/index.js` — found the vendored dependency, not the actual source file. Task succeeded but in a slightly wrong location.
+- ⚠️ `ROUTER_STATS_SUMMARY.md` auto-created but not explicitly asked for — agent gold-plates a bit
+- **Verdict:** Strong performance overall. The wrong-file issue is worth noting as a codebase navigation quirk — agent doesn't always distinguish source from vendored deps.
+
 ### T3 — Multi-session continuity (2026-03-26)
 - ✓ Agent completed the task (bookstore API with all endpoints working)
 - ✗ Agent never created TASK.md — continuity tracking mechanism not used

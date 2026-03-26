@@ -161,7 +161,7 @@ cmd_task_status() {
   fi
 
   echo "=== Active task (TASK.md) ==="
-  docker exec "$CONTAINER" cat /home/node/workspace/TASK.md 2>/dev/null || echo "No active task file found in workspace."
+  docker exec "$CONTAINER" cat /home/node/.openclaw/workspace/TASK.md 2>/dev/null || echo "No active task file found in workspace."
 }
 
 cmd_ask() {
