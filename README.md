@@ -5,7 +5,7 @@ Run [OpenClaw](https://github.com/openclaw/openclaw) in a Docker container. One 
 ## Prerequisites
 
 - **Docker Desktop** (or Docker Engine + Compose v2 on Linux)
-- **Anthropic API key** — [get one here](https://console.anthropic.com/settings/keys)
+- **Anthropic API key** — run `claude setup-token` and copy the key it gives you
 - **OpenClaw CLI** on your host machine: `npm install -g openclaw`
 
 ## Quick Start
