@@ -655,3 +655,90 @@ The agent must use explicit absolute paths to access project files.
 - Consider symlinking /home/node/workspace/ into /home/node/.openclaw/workspace/projects/
 
 **Status:** INFO — documented, seed/AGENTS.md should be updated
+
+---
+
+## [BUG] ISSUE-27: docker compose up -d may start container without port bindings after port conflict
+
+**Category:** Infrastructure / Docker networking
+**Severity:** Medium
+**Discovered:** 2026-03-25 Category A cycle 5 (during F→A transition)
+
+**Description:**
+When `docker compose up -d` is run while another container (e.g., openclaw-work) still holds the
+required ports (18790, 3000, 3001), Docker starts clawbox-work but without any port mappings.
+The container becomes healthy (gateway starts fine), but `docker port clawbox-work` shows nothing
+and CLI connections fail with 1006 abnormal closure.
+
+This is distinct from a hard "port already allocated" error — Docker silently maps no ports.
+
+**Evidence:**
+- `docker compose down -v && docker compose up -d` with openclaw-work running → container started,
+  gateway healthy, but `docker port clawbox-work` returned empty, 18790 unreachable
+- Stopping openclaw-work and running `docker compose up -d --force-recreate` → ports bound correctly
+- Pattern also seen in Category F when openclaw-work took over 18790 while clawbox-work was down
+
+**Impact:**
+- CLI falls back to embedded host agent (confusing for operators)
+- Container appears healthy but is inaccessible from host
+- Requires `docker compose up -d --force-recreate` to fix
+
+**Reproduction:**
+1. Start openclaw-work (holds ports 18790, 3000, 3001)
+2. Run `docker compose down -v && docker compose up -d` in clawbox/
+3. Observe: clawbox-work starts but has no port mappings
+
+**Fix/Recommendation:**
+- Add port conflict check in setup.sh and/or Makefile start target
+- Warn user if any of 18790/3000/3001 are already in use before starting
+- Document: `docker compose up -d --force-recreate` as the fix command
+
+**Status:** OPEN — needs port conflict detection in start scripts
+
+---
+
+## [BUG] ISSUE-28: docker cp preserves macOS UID (501) not container UID (1000); files created with mode 600 are unreadable by container agent
+
+**Category:** Infrastructure / Docker file operations
+**Severity:** Medium (Category F specific — doc seeding)
+**Discovered:** 2026-03-26 Category F cycle 2
+
+**Description:**
+When files are copied from the macOS host into the container using `docker cp`, the files inherit
+the macOS user's UID (501) as owner rather than the container's `node` user (UID 1000). Combined
+with a default umask that creates files with mode 600, files are readable only by UID 501 — not
+by the container's `node` user.
+
+Symptoms:
+- Agent reports "Permission denied" when trying to read seeded doc files
+- `cat file` inside container returns "Permission denied" even for the agent
+- `docker exec --user root clawbox-work chmod ...` is blocked by container security policy
+- `chown` as root succeeds but `chmod` does not (sticky bit on parent dir)
+
+**Evidence:**
+```
+-rw-------  1 501  dialout  63548 Mar 26 06:08 address-book-tutorial.md
+# → node user (uid=1000) cannot read this
+```
+
+**Workaround used in test:**
+- `docker exec --user root ... chown -R node:node /home/node/workspace/docs/`
+- Files created as mode 600 (node-owned) are readable by the node process ✅
+
+**Proper Fix:**
+Option A: After `docker cp`, run `docker exec --user root ... chown -R node:node <dest>`
+Option B: Create files as a tar archive and use `docker exec cat | tar x` (preserves no ownership)
+Option C: Write files to the container via the agent's `write` tool (already correct user)
+
+**Category F Impact:**
+- Cycle 1: same issue caused agent to build from training data (docs unreadable)
+- Cycle 2: same issue, agent used training data, then docs made readable via post-hoc chown
+  → Agent confirmed docs readable and relevant after fix
+- Workaround: `docker exec --user root clawbox-work chown -R node:node /path/`
+
+**Recommendations:**
+- Update Category F test procedure to chown after docker cp
+- Consider creating a `scripts/seed-docs.sh` helper that does docker cp + chown in one step
+- Document in README: "When manually copying files into the container, run chown after cp"
+
+**Status:** OPEN — procedure issue, can be fixed with chown helper script
