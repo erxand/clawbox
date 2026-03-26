@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# clawbox — CLI wrapper for the Clawbox Docker agent
+# Install: sudo cp clawbox /usr/local/bin/clawbox && sudo chmod +x /usr/local/bin/clawbox
+# Or run: make install
+
+set -euo pipefail
+
+# Find the clawbox project directory
+# Prefer CLAWBOX_DIR env var, then look for the dir relative to this script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLAWBOX_DIR="${CLAWBOX_DIR:-$SCRIPT_DIR}"
+
+if [ ! -f "$CLAWBOX_DIR/docker-compose.yml" ]; then
+  echo "Error: clawbox project not found at $CLAWBOX_DIR"
+  echo "Set CLAWBOX_DIR env var or run from the clawbox project directory."
+  exit 1
+fi
+
+GATEWAY_URL="ws://localhost:18790"
+GATEWAY_TOKEN="clawbox"
+
+# ── Commands ────────────────────────────────────────────────────────
+
+cmd_start() {
+  echo "▶ Starting Clawbox..."
+  (cd "$CLAWBOX_DIR" && docker compose up -d)
+  echo "Waiting for healthy..."
+  for i in $(seq 1 30); do
+    STATUS=$(docker inspect clawbox-work --format '{{.State.Health.Status}}' 2>/dev/null || echo "missing")
+    if [ "$STATUS" = "healthy" ]; then echo "✓ Clawbox is ready."; return; fi
+    sleep 3
+  done
+  echo "⚠ Container may still be starting. Run: clawbox logs"
+}
+
+cmd_stop() {
+  echo "▶ Stopping Clawbox..."
+  (cd "$CLAWBOX_DIR" && docker compose down)
+}
+
+cmd_restart() {
+  cmd_stop
+  cmd_start
+}
+
+cmd_status() {
+  (cd "$CLAWBOX_DIR" && docker compose ps)
+  echo ""
+  OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
+    openclaw gateway health 2>/dev/null && echo "Gateway: ✓ healthy" || echo "Gateway: ✗ unreachable"
+}
+
+cmd_logs() {
+  (cd "$CLAWBOX_DIR" && docker compose logs -f)
+}
+
+cmd_chat() {
+  echo "▶ Opening Clawbox chat (Ctrl+C to exit)..."
+  OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
+    openclaw tui
+}
+
+cmd_run() {
+  # clawbox run "your message" — send a one-shot message
+  if [ -z "${1:-}" ]; then
+    echo "Usage: clawbox run \"your message\""
+    exit 1
+  fi
+  OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
+    openclaw agent --agent main -m "$1"
+}
+
+cmd_shell() {
+  docker exec -it clawbox-work sh
+}
+
+cmd_backup() {
+  (cd "$CLAWBOX_DIR" && make backup)
+}
+
+cmd_restore() {
+  if [ -z "${1:-}" ]; then
+    echo "Usage: clawbox restore <path/to/backup.tar.gz>"
+    exit 1
+  fi
+  (cd "$CLAWBOX_DIR" && make restore FILE="$1")
+}
+
+cmd_upgrade() {
+  echo "▶ Upgrading Clawbox to latest OpenClaw..."
+  (cd "$CLAWBOX_DIR" && docker compose down && docker compose build --no-cache && docker compose up -d)
+}
+
+cmd_clean() {
+  echo "⚠ This will STOP the container and DELETE all agent data."
+  read -rp "Are you sure? [y/N] " confirm
+  if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+    (cd "$CLAWBOX_DIR" && docker compose down -v)
+    echo "Cleaned."
+  else
+    echo "Aborted."
+  fi
+}
+
+cmd_install() {
+  INSTALL_PATH="/usr/local/bin/clawbox"
+  echo "▶ Installing clawbox CLI to $INSTALL_PATH..."
+  sudo cp "$SCRIPT_DIR/clawbox" "$INSTALL_PATH"
+  sudo chmod +x "$INSTALL_PATH"
+  # Store the project dir so the installed binary can find it
+  sudo sed -i '' "s|CLAWBOX_DIR:-\$SCRIPT_DIR|CLAWBOX_DIR:-$SCRIPT_DIR|g" "$INSTALL_PATH" 2>/dev/null || true
+  echo "✓ Installed. Run: clawbox help"
+}
+
+cmd_help() {
+  cat << EOF
+Clawbox — containerized AI coding agent
+
+Usage: clawbox <command> [args]
+
+Commands:
+  start              Start the container
+  stop               Stop the container
+  restart            Stop then start
+  status             Show container + gateway status
+  logs               Tail container logs
+  chat               Open interactive TUI chat session
+  run "message"      Send a one-shot message to the agent
+  shell              Open a shell inside the container
+  backup             Backup agent state to tar.gz
+  restore <file>     Restore agent state from tar.gz
+  upgrade            Rebuild image with latest OpenClaw
+  clean              Stop container and delete all data
+  install            Install clawbox CLI to /usr/local/bin
+  help               Show this help
+
+Environment:
+  CLAWBOX_DIR        Path to clawbox project (default: script directory)
+EOF
+}
+
+# ── Dispatch ─────────────────────────────────────────────────────────
+
+COMMAND="${1:-help}"
+shift || true
+
+case "$COMMAND" in
+  start)    cmd_start "$@" ;;
+  stop)     cmd_stop "$@" ;;
+  restart)  cmd_restart "$@" ;;
+  status)   cmd_status "$@" ;;
+  logs)     cmd_logs "$@" ;;
+  chat)     cmd_chat "$@" ;;
+  run)      cmd_run "$@" ;;
+  shell)    cmd_shell "$@" ;;
+  backup)   cmd_backup "$@" ;;
+  restore)  cmd_restore "$@" ;;
+  upgrade)  cmd_upgrade "$@" ;;
+  clean)    cmd_clean "$@" ;;
+  install)  cmd_install "$@" ;;
+  help|--help|-h) cmd_help ;;
+  *)
+    echo "Unknown command: $COMMAND"
+    echo "Run: clawbox help"
+    exit 1
+    ;;
+esac

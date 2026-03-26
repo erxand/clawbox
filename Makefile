@@ -1,4 +1,4 @@
-.PHONY: start stop status logs shell tui chat backup restore upgrade build-airgap test-isolation clean help
+.PHONY: start stop status logs shell tui chat backup restore upgrade build-airgap test-isolation clean install help
 
 COMPOSE := docker compose
 CONTAINER := clawbox-work
@@ -8,6 +8,12 @@ GATEWAY_URL := ws://localhost:18790
 # Token value doesn't matter (gateway runs auth=none) but the CLI
 # requires something to be set when using a URL override.
 GATEWAY_TOKEN := clawbox
+
+install: ## Install clawbox CLI to /usr/local/bin (run once after cloning)
+	@chmod +x clawbox
+	@sudo cp clawbox /usr/local/bin/clawbox
+	@sudo sed -i '' "s|CLAWBOX_DIR:-\$$SCRIPT_DIR|CLAWBOX_DIR:-$(shell pwd)|g" /usr/local/bin/clawbox 2>/dev/null || true
+	@echo "✓ clawbox installed. Run: clawbox help"
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
