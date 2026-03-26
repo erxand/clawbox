@@ -6,8 +6,10 @@ services:
 
     ports:
       - "127.0.0.1:18790:18789"  # Gateway (loopback-only)
-      - "127.0.0.1:3000:3000"    # Dev app server (loopback-only)
-      - "127.0.0.1:3001:3001"    # Dev app server 2 (loopback-only)
+      # App server ports — uncomment when running dev servers in the container.
+      # By default these are NOT mapped to avoid conflicting with your local dev server.
+      # - "127.0.0.1:3000:3000"
+      # - "127.0.0.1:3001:3001"
 
     volumes:
       - clawbox-work-state:/home/node/.openclaw
