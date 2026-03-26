@@ -1,4 +1,4 @@
-.PHONY: start stop status logs shell tui chat backup restore upgrade build-airgap test-isolation clean install help
+.PHONY: start stop status logs shell tui chat backup restore upgrade build-airgap test-isolation clean install cp help
 
 COMPOSE := docker compose
 CONTAINER := clawbox-work

@@ -18,17 +18,66 @@ fi
 
 GATEWAY_URL="ws://localhost:18790"
 GATEWAY_TOKEN="clawbox"
+CONTAINER="clawbox-work"
+TASKS_FILE="$HOME/.clawbox-tasks"
+
+# ── Helpers ─────────────────────────────────────────────────────────
+
+check_port() {
+  # Try lsof first, fall back to nc
+  if command -v lsof &>/dev/null; then
+    lsof -ti tcp:"$1" 2>/dev/null | head -1
+  else
+    # nc -z returns 0 if port is open; we can't get PID but can detect conflict
+    if nc -z 127.0.0.1 "$1" 2>/dev/null; then
+      echo "unknown"
+    fi
+  fi
+}
 
 # ── Commands ────────────────────────────────────────────────────────
 
 cmd_start() {
+  # Port conflict detection
+  for PORT in 18790 3000; do
+    PID=$(check_port "$PORT")
+    if [ -n "$PID" ]; then
+      # Check if it's our own container
+      CONTAINER_PID=$(docker inspect "$CONTAINER" --format '{{.State.Pid}}' 2>/dev/null || echo "")
+      if [ -n "$CONTAINER_PID" ] && [ "$CONTAINER_PID" != "0" ]; then
+        echo "Clawbox is already running. Use 'clawbox stop' first or 'clawbox status' to check."
+        exit 1
+      fi
+      if [ "$PID" = "unknown" ]; then
+        echo "⚠ Port $PORT is in use. Stop whatever is using it before starting Clawbox."
+      else
+        echo "⚠ Port $PORT is in use by PID $PID. Run: kill $PID or stop whatever is using it."
+      fi
+      exit 1
+    fi
+  done
+
   echo "▶ Starting Clawbox..."
   (cd "$CLAWBOX_DIR" && docker compose up -d)
+
+  # Wait for healthy, detect OOM
   echo "Waiting for healthy..."
   for i in $(seq 1 30); do
-    STATUS=$(docker inspect clawbox-work --format '{{.State.Health.Status}}' 2>/dev/null || echo "missing")
+    # Check if container exited
+    RUNNING=$(docker inspect "$CONTAINER" --format '{{.State.Running}}' 2>/dev/null || echo "false")
+    if [ "$RUNNING" = "false" ]; then
+      OOM=$(docker inspect "$CONTAINER" --format '{{.State.OOMKilled}}' 2>/dev/null || echo "false")
+      if [ "$OOM" = "true" ]; then
+        echo "✗ Container was killed by OOM — try increasing memory in docker-compose.yml"
+        exit 1
+      fi
+      echo "✗ Container exited unexpectedly. Run: clawbox logs"
+      exit 1
+    fi
+
+    STATUS=$(docker inspect "$CONTAINER" --format '{{.State.Health.Status}}' 2>/dev/null || echo "missing")
     if [ "$STATUS" = "healthy" ]; then echo "✓ Clawbox is ready."; return; fi
-    sleep 3
+    sleep 1
   done
   echo "⚠ Container may still be starting. Run: clawbox logs"
 }
@@ -71,7 +120,56 @@ cmd_run() {
 }
 
 cmd_shell() {
-  docker exec -it clawbox-work sh
+  docker exec -it "$CONTAINER" sh
+}
+
+cmd_cp() {
+  if [ -z "${1:-}" ] || [ -z "${2:-}" ]; then
+    echo "Usage: clawbox cp <local-path> <container-path>"
+    exit 1
+  fi
+  local src="$1"
+  local dest="$2"
+  echo "▶ Copying $src → $CONTAINER:$dest ..."
+  docker cp "$src" "$CONTAINER:$dest"
+  docker exec "$CONTAINER" chown -R node:node "$dest"
+  echo "✓ Copied and ownership fixed."
+}
+
+cmd_task() {
+  if [ -z "${1:-}" ]; then
+    echo "Usage: clawbox task \"description\""
+    exit 1
+  fi
+  local desc="$1"
+  local ts
+  ts=$(date '+%Y-%m-%d %H:%M:%S')
+  echo "$ts | $desc" >> "$TASKS_FILE"
+  OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
+    openclaw agent --agent main -m "$desc" &
+  echo "Task started. Run 'clawbox task-status' to check progress."
+}
+
+cmd_task_status() {
+  if [ -f "$TASKS_FILE" ]; then
+    echo "=== Recorded tasks ==="
+    cat "$TASKS_FILE"
+    echo ""
+  else
+    echo "No tasks recorded yet."
+    echo ""
+  fi
+
+  echo "=== Active task (TASK.md) ==="
+  docker exec "$CONTAINER" cat /home/node/workspace/TASK.md 2>/dev/null || echo "No active task file found in workspace."
+}
+
+cmd_ask() {
+  cmd_run "$@"
+}
+
+cmd_logs_tail() {
+  docker exec "$CONTAINER" tail -50 "/tmp/openclaw/openclaw-$(date +%Y-%m-%d).log" 2>/dev/null || echo "No log file found for today."
 }
 
 cmd_backup() {
@@ -126,7 +224,12 @@ Commands:
   logs               Tail container logs
   chat               Open interactive TUI chat session
   run "message"      Send a one-shot message to the agent
+  ask "question"     Alias for run — send a question to the agent
+  task "description" Run a task in the background
+  task-status        Check background task progress
+  cp <src> <dest>    Copy file into container (fixes ownership)
   shell              Open a shell inside the container
+  logs-tail          Show last 50 lines of today's gateway log
   backup             Backup agent state to tar.gz
   restore <file>     Restore agent state from tar.gz
   upgrade            Rebuild image with latest OpenClaw
@@ -145,19 +248,24 @@ COMMAND="${1:-help}"
 shift || true
 
 case "$COMMAND" in
-  start)    cmd_start "$@" ;;
-  stop)     cmd_stop "$@" ;;
-  restart)  cmd_restart "$@" ;;
-  status)   cmd_status "$@" ;;
-  logs)     cmd_logs "$@" ;;
-  chat)     cmd_chat "$@" ;;
-  run)      cmd_run "$@" ;;
-  shell)    cmd_shell "$@" ;;
-  backup)   cmd_backup "$@" ;;
-  restore)  cmd_restore "$@" ;;
-  upgrade)  cmd_upgrade "$@" ;;
-  clean)    cmd_clean "$@" ;;
-  install)  cmd_install "$@" ;;
+  start)       cmd_start "$@" ;;
+  stop)        cmd_stop "$@" ;;
+  restart)     cmd_restart "$@" ;;
+  status)      cmd_status "$@" ;;
+  logs)        cmd_logs "$@" ;;
+  chat)        cmd_chat "$@" ;;
+  run)         cmd_run "$@" ;;
+  ask)         cmd_ask "$@" ;;
+  task)        cmd_task "$@" ;;
+  task-status) cmd_task_status "$@" ;;
+  cp)          cmd_cp "$@" ;;
+  shell)       cmd_shell "$@" ;;
+  logs-tail)   cmd_logs_tail "$@" ;;
+  backup)      cmd_backup "$@" ;;
+  restore)     cmd_restore "$@" ;;
+  upgrade)     cmd_upgrade "$@" ;;
+  clean)       cmd_clean "$@" ;;
+  install)     cmd_install "$@" ;;
   help|--help|-h) cmd_help ;;
   *)
     echo "Unknown command: $COMMAND"

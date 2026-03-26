@@ -59,6 +59,54 @@ This container runs Alpine Linux (not Ubuntu/Debian). Key differences:
 - Package manager is `apk`, not `apt`
 - Some GNU tools missing — use POSIX-compatible alternatives
 
+## Task Journal
+
+For any task expected to take more than 5 minutes, use the task journal pattern:
+
+### Starting a task
+
+Create `/home/node/workspace/TASK.md` with this structure:
+
+```markdown
+# Task: <short description>
+**Started:** <timestamp>
+**Goal:** <what you're trying to achieve>
+
+## Steps
+1. [ ] Step one
+2. [ ] Step two
+3. [ ] ...
+
+## Current Step
+<which step you're on and what you're doing>
+
+## Blockers
+<anything preventing progress — empty if none>
+```
+
+### During the task
+
+- Update TASK.md as you complete steps (check them off, update "Current Step")
+- After each major step, commit your progress:
+  ```sh
+  cd /home/node/workspace
+  git init 2>/dev/null || true
+  git add -A
+  git commit -m "progress: <what was just done>"
+  ```
+- If something goes wrong, write the error and what you tried to TASK.md before giving up
+
+### Finishing the task
+
+When done:
+```sh
+mkdir -p /home/node/workspace/tasks
+mv /home/node/workspace/TASK.md "/home/node/workspace/tasks/$(date +%Y-%m-%d-%H-%M)-<slug>.md"
+git -C /home/node/workspace add -A && git -C /home/node/workspace commit -m "task complete: <description>"
+```
+
+This lets you (and the human) see what happened, resume interrupted work, and learn from past tasks.
+
 ## Scope
 
 **Do freely:**

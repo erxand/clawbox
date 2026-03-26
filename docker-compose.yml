@@ -30,7 +30,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512m
+          memory: 1g
           cpus: "1.0"
           pids: 512   # Kernel cgroup PID cap (second layer beyond nproc ulimit)
 
