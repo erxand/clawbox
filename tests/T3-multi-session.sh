@@ -36,7 +36,7 @@ wait_for_agent() {
     sleep 10
     elapsed=$((elapsed + 10))
     # Check if TASK.md exists as a signal of progress
-    docker exec "$CONTAINER" test -f /home/node/workspace/TASK.md 2>/dev/null && break
+    docker exec "$CONTAINER" test -f /home/node/.openclaw/workspace/TASK.md 2>/dev/null && break
   done
   # Give extra time for the agent to finish after TASK.md appears
   sleep 30
@@ -63,9 +63,9 @@ SESSION1_TIME=$((SESSION1_END - SESSION1_START))
 log "Session 1 completed in ${SESSION1_TIME}s"
 
 # Capture session 1 state
-S1_TASK_MD=$(docker exec "$CONTAINER" cat /home/node/workspace/TASK.md 2>/dev/null || echo "(not found)")
-S1_FILES=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -type f -name '*.js' -o -name '*.json' 2>/dev/null | head -20" || echo "(none)")
-S1_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd /home/node/workspace && git log --oneline 2>/dev/null" || echo "(no git repo)")
+S1_TASK_MD=$(docker exec "$CONTAINER" cat /home/node/.openclaw/workspace/TASK.md 2>/dev/null || echo "(not found)")
+S1_FILES=$(docker exec "$CONTAINER" sh -c "find /home/node/.openclaw/workspace -type f -name '*.js' -o -name '*.json' 2>/dev/null | head -20" || echo "(none)")
+S1_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd /home/node/.openclaw/workspace && git log --oneline 2>/dev/null" || echo "(no git repo)")
 
 log "Session 1 state captured. Stopping container..."
 
@@ -107,9 +107,9 @@ DELETE_BOOK=$(curl -s -X DELETE http://localhost:3000/books/1 2>/dev/null || ech
 GET_BOOKS_ALT=$(curl -s http://localhost:3001/books 2>/dev/null || echo "FAIL")
 
 # Final state
-S2_TASK_MD=$(docker exec "$CONTAINER" cat /home/node/workspace/TASK.md 2>/dev/null || echo "(not found)")
-S2_FILES=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -type f -name '*.js' -o -name '*.json' 2>/dev/null | head -20" || echo "(none)")
-S2_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd /home/node/workspace && git log --oneline 2>/dev/null" || echo "(no git repo)")
+S2_TASK_MD=$(docker exec "$CONTAINER" cat /home/node/.openclaw/workspace/TASK.md 2>/dev/null || echo "(not found)")
+S2_FILES=$(docker exec "$CONTAINER" sh -c "find /home/node/.openclaw/workspace -type f -name '*.js' -o -name '*.json' 2>/dev/null | head -20" || echo "(none)")
+S2_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd /home/node/.openclaw/workspace && git log --oneline 2>/dev/null" || echo "(no git repo)")
 
 # ── Write results ──────────────────────────────────────────────────
 

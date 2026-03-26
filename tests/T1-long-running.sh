@@ -56,7 +56,7 @@ while [ $(($(date +%s) - START_TIME)) -lt $TIMEOUT_SECONDS ]; do
   fi
 
   # Check TASK.md
-  TASK_CONTENT=$(docker exec "$CONTAINER" cat /home/node/workspace/TASK.md 2>/dev/null || echo "")
+  TASK_CONTENT=$(docker exec "$CONTAINER" cat /home/node/.openclaw/workspace/TASK.md 2>/dev/null || echo "")
   if [ -n "$TASK_CONTENT" ]; then
     TASK_MD_FOUND="yes"
     CURRENT_STEP=$(echo "$TASK_CONTENT" | grep -A1 "Current Step" | tail -1 || echo "unknown")
@@ -67,7 +67,7 @@ while [ $(($(date +%s) - START_TIME)) -lt $TIMEOUT_SECONDS ]; do
   fi
 
   # Check git commits
-  GIT_COMMITS=$(docker exec "$CONTAINER" sh -c "cd /home/node/workspace && git log --oneline 2>/dev/null | wc -l" || echo "0")
+  GIT_COMMITS=$(docker exec "$CONTAINER" sh -c "cd /home/node/.openclaw/workspace && git log --oneline 2>/dev/null | wc -l" || echo "0")
   GIT_COMMITS=$(echo "$GIT_COMMITS" | tr -d ' ')
 
   log "Poll #$POLLS — running=$RUNNING task_md=$TASK_MD_FOUND commits=$GIT_COMMITS"
@@ -83,10 +83,10 @@ CURL_3000=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/
 CURL_3001=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/tasks 2>/dev/null || echo "000")
 
 # Final TASK.md content
-FINAL_TASK_MD=$(docker exec "$CONTAINER" cat /home/node/workspace/TASK.md 2>/dev/null || echo "(not found)")
+FINAL_TASK_MD=$(docker exec "$CONTAINER" cat /home/node/.openclaw/workspace/TASK.md 2>/dev/null || echo "(not found)")
 
 # Git log
-GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd /home/node/workspace && git log --oneline 2>/dev/null" || echo "(no git repo)")
+GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd /home/node/.openclaw/workspace && git log --oneline 2>/dev/null" || echo "(no git repo)")
 
 # ── Write results ──────────────────────────────────────────────────
 

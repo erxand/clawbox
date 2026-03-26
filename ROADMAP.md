@@ -1,5 +1,29 @@
 # Clawbox Roadmap
 
+## Test Results
+
+### T3 — Multi-session continuity (2026-03-26)
+- ✓ Agent completed the task (bookstore API with all endpoints working)
+- ✗ Agent never created TASK.md — continuity tracking mechanism not used
+- ✗ Tests were checking wrong workspace path (`/home/node/workspace` instead of `/home/node/.openclaw/workspace`)
+- **Note:** T3 result was partially misleading due to path bug — files were actually created in the right place
+
+### T4 — Error recovery (2026-03-26)
+- ✓ Agent correctly diagnosed `MODULE_NOT_FOUND` error in 26s
+- ✓ Identified dead `require('nonexistent-package')` and removed it
+- ✓ Verified server starts and GET / returns 200
+- No issues observed — agent performs well on straightforward error recovery
+
+---
+
+## Bug Fixes Found During Testing
+
+### ISSUE-29: Wrong workspace path in test scripts
+**Problem:** All test scripts (T1, T3, T4) reference `/home/node/workspace` but the actual container workspace is `/home/node/.openclaw/workspace`. This caused T3's TASK.md and file existence checks to always fail even when files were present.
+**Fix:** Updated all three test scripts to use the correct path. ✅ Fixed 2026-03-26.
+
+---
+
 ## Phase 1 — Bug Fixes (immediate)
 
 ### ISSUE-25: Container OOM on heavy builds

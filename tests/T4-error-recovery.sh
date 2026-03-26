@@ -41,7 +41,7 @@ log "Setting up npm project and breaking it..."
 
 # Create a simple project, then introduce a broken require
 docker exec "$CONTAINER" sh -c "
-  cd /home/node/workspace &&
+  cd /home/node/.openclaw/workspace &&
   mkdir -p broken-project &&
   cd broken-project &&
   npm init -y &&
@@ -57,12 +57,12 @@ INNEREOF
 "
 
 # Capture the error
-INITIAL_ERROR=$(docker exec "$CONTAINER" sh -c "cd /home/node/workspace/broken-project && node index.js 2>&1" || true)
+INITIAL_ERROR=$(docker exec "$CONTAINER" sh -c "cd /home/node/.openclaw/workspace/broken-project && node index.js 2>&1" || true)
 log "Initial error: $(echo "$INITIAL_ERROR" | head -3)"
 
 # ── Ask agent to fix it ───────────────────────────────────────────
 
-FIX_MSG="I was trying to build something in /home/node/workspace/broken-project but got an error. Check what went wrong and fix it so node runs without errors. Try running: cd /home/node/workspace/broken-project && node index.js"
+FIX_MSG="I was trying to build something in /home/node/.openclaw/workspace/broken-project but got an error. Check what went wrong and fix it so node runs without errors. Try running: cd /home/node/.openclaw/workspace/broken-project && node index.js"
 
 log "Asking agent to diagnose and fix..."
 FIX_START=$(date +%s)
@@ -77,19 +77,19 @@ log "Agent responded in ${FIX_TIME}s"
 # ── Verify fix ─────────────────────────────────────────────────────
 
 log "Verifying fix..."
-VERIFY_OUTPUT=$(docker exec "$CONTAINER" sh -c "cd /home/node/workspace/broken-project && timeout 5 node index.js 2>&1 &
+VERIFY_OUTPUT=$(docker exec "$CONTAINER" sh -c "cd /home/node/.openclaw/workspace/broken-project && timeout 5 node index.js 2>&1 &
 sleep 2
 curl -s http://localhost:3000 2>/dev/null || echo 'CURL_FAIL'
 kill %1 2>/dev/null || true
 wait 2>/dev/null || true" || echo "VERIFY_FAIL")
 
-FIXED_INDEX=$(docker exec "$CONTAINER" cat /home/node/workspace/broken-project/index.js 2>/dev/null || echo "(not found)")
+FIXED_INDEX=$(docker exec "$CONTAINER" cat /home/node/.openclaw/workspace/broken-project/index.js 2>/dev/null || echo "(not found)")
 
 # Check if the fix worked
 FIX_WORKED="no"
 if echo "$VERIFY_OUTPUT" | grep -qi "hello\|CURL_FAIL"; then
   # Even CURL_FAIL is OK if node started without error
-  NODE_TEST=$(docker exec "$CONTAINER" sh -c "cd /home/node/workspace/broken-project && node -e \"require('./index.js')\" 2>&1 &
+  NODE_TEST=$(docker exec "$CONTAINER" sh -c "cd /home/node/.openclaw/workspace/broken-project && node -e \"require('./index.js')\" 2>&1 &
   sleep 1
   kill %1 2>/dev/null
   echo 'OK'" 2>/dev/null || echo "FAIL")
@@ -97,7 +97,7 @@ if echo "$VERIFY_OUTPUT" | grep -qi "hello\|CURL_FAIL"; then
 fi
 
 # Simpler check: does the file still reference nonexistent-package?
-if ! docker exec "$CONTAINER" grep -q "nonexistent-package" /home/node/workspace/broken-project/index.js 2>/dev/null; then
+if ! docker exec "$CONTAINER" grep -q "nonexistent-package" /home/node/.openclaw/workspace/broken-project/index.js 2>/dev/null; then
   FIX_WORKED="yes"
 fi
 
