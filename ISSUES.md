@@ -566,3 +566,92 @@ This confirms that any prompt injection or compromised agent session can exfiltr
 3. Scope API keys to read-only / restricted permissions where provider allows
 
 **Status:** INFO — consistent finding across all 4 cycles, documented. Medium severity, inherent to env var model.
+
+---
+
+## [OPEN] ISSUE-24: Two conflicting clawbox instances can run on same host (port conflict)
+
+**Category:** Infrastructure / Multi-instance
+**Severity:** Medium
+**Discovered:** 2026-03-25 Category F test
+
+**Description:**
+When a second clawbox-derived project (e.g. `openclaw-docker`) is already running and bound to
+port 18790, starting the `clawbox` project causes a port allocation failure:
+`Bind for 127.0.0.1:18790 failed: port is already allocated`
+The new container starts but without the gateway port mapping, silently routing CLI connections
+to the wrong container. The user has no indication which container the CLI is talking to.
+
+**Impact:**
+- Category F was initially running against the WRONG container (`openclaw-work` instead of `clawbox-work`)
+- All exec tool calls, file writes, and reads went to the wrong container
+- Docs copied into `clawbox-work` were not visible to the agent (it was in `openclaw-work`)
+- This is a user-confusion/operational risk for anyone running multiple clawbox variants
+
+**Recommendations:**
+- Add `make status` output showing which container the CLI is bound to
+- Add port conflict detection in `setup.sh` / `Makefile`
+- Consider configurable gateway port (OPENCLAW_GATEWAY_PORT env var in compose)
+- Document in README: only one clawbox instance can bind 18790 at a time
+
+**Status:** OPEN — needs documentation + port conflict detection in setup.sh/Makefile
+
+---
+
+## [OPEN] ISSUE-25: Container exits during long agent runs (gateway OOM/crash)
+
+**Category:** Resilience — container lifetime under load
+**Severity:** Medium
+**Discovered:** 2026-03-25 Category F test
+
+**Description:**
+During a long Category F test run (~10 minutes of continuous agent activity including npm installs,
+file writes, and server starts), the `openclaw-work` container exited unexpectedly. The CLI then
+fell back to embedded (host agent). No error message was shown to the user — they only noticed
+when the response came from Arclo (host) instead of the container agent.
+
+**Potential causes:**
+- Gateway OOM (npm install during agent run consumed memory near 512MB cap)
+- Gateway crash from exec tool workload during long session
+- The last log line was `[tools] read failed: EISDIR` suggesting a tool error cascaded
+
+**Impact:**
+- Silent fallback to embedded agent: user gets responses but from the wrong agent
+- Work done inside the container (files written, servers started) is lost if user doesn't notice
+- No retry or reconnect logic in CLI for long-running sessions
+
+**Recommendations:**
+- Add visible warning when CLI falls back to embedded: "WARNING: container gateway unreachable — responses from local agent"
+- Increase memory limit for long-running agent sessions (or use 1GB RAM cap)
+- Consider gateway health monitoring that alerts the user via message if container dies mid-session
+
+**Status:** OPEN — needs upstream CLI improvement + potential memory limit increase for heavy workloads
+
+---
+
+## [INFO] ISSUE-26: Agent confused by dual workspace paths (/home/node/workspace vs .openclaw/workspace)
+
+**Category:** UX / Agent orientation
+**Severity:** Low
+**Discovered:** 2026-03-25 Category F test
+
+**Description:**
+The container has two distinct "workspace" directories:
+1. `/home/node/.openclaw/workspace/` — agent's default working directory (AGENTS.md, SOUL.md, etc.)
+2. `/home/node/workspace/` — project workspace for user code and files
+
+When asked about file paths, the agent consistently defaults to the `.openclaw/workspace` context
+and reports that paths under `/home/node/workspace/` "don't exist" — even when they do.
+The agent must use explicit absolute paths to access project files.
+
+**Impact:**
+- Category F took 3 retries before agent correctly located local docs
+- Agent first reported docs missing, then built app in wrong directory
+- Without explicit `workdir` parameter in exec calls, commands run in .openclaw/workspace
+
+**Recommendations:**
+- Update `seed/AGENTS.md` to document both workspace paths and their purposes
+- Add a note: "Project files live in /home/node/workspace/ — use absolute paths"
+- Consider symlinking /home/node/workspace/ into /home/node/.openclaw/workspace/projects/
+
+**Status:** INFO — documented, seed/AGENTS.md should be updated

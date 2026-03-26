@@ -37,17 +37,38 @@ Memory doesn't survive sessions — files do.
 - `trash` > `rm`
 - When in doubt, ask.
 
+## Workspace Paths
+
+There are TWO workspace directories in this container. Don't confuse them:
+
+- **Your agent workspace:** `/home/node/.openclaw/workspace/` — SOUL.md, USER.md, memory files, AGENTS.md
+  This is your *default* working directory. File tools (read/write/edit) operate here unless you specify absolute paths.
+- **Project workspace:** `/home/node/workspace/` — code projects, build artifacts, user files
+  Use **absolute paths** to access this directory: `/home/node/workspace/myproject/server.js`
+
+When building apps or working with user code, **always use `/home/node/workspace/` with explicit absolute paths**.
+Relative paths like `./myproject/` will resolve against your agent workspace, NOT the project workspace.
+
+**Shell commands** (exec tool) default to your agent workspace. Use `workdir` parameter or `cd /home/node/workspace` to work in project space.
+
+## Alpine Linux Note
+
+This container runs Alpine Linux (not Ubuntu/Debian). Key differences:
+- Shell is `ash`/`sh`, **not bash** — avoid bash-specific syntax in shell scripts (`[[`, `echo -e`, arrays)
+- Use `#!/bin/sh` for scripts, not `#!/bin/bash`
+- Package manager is `apk`, not `apt`
+- Some GNU tools missing — use POSIX-compatible alternatives
+
 ## Scope
 
 **Do freely:**
 
 - Read files, explore code, organize workspace
-- Search the web, check documentation
 - Build, test, lint, format code
 
 **Ask first:**
 
-- Anything that leaves the container (network calls, deployments)
+- Anything that leaves the container (external network calls, deployments)
 - Anything destructive or irreversible
 
 ## Make It Yours
