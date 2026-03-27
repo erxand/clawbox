@@ -22,11 +22,22 @@ cp .env.example .env
 # 3. Run setup (builds image, starts container, waits for healthy)
 bash setup.sh
 
-# 4. Connect your CLI
-export OPENCLAW_GATEWAY_URL=ws://localhost:18790
-export OPENCLAW_GATEWAY_TOKEN=clawbox   # required by CLI when overriding URL (value is ignored — auth=none)
-openclaw agent --agent main -m "hello"
+# 4. (Optional) Install the clawbox CLI for convenience
+make install   # copies clawbox to /usr/local/bin
+
+# 5. Send your first message
+clawbox run "hello"
+
+# Or open an interactive chat session
+clawbox chat
 ```
+
+> **Without `make install`:** use `./clawbox run "hello"` from the project directory, or set env vars manually:
+> ```bash
+> export OPENCLAW_GATEWAY_URL=ws://localhost:18790
+> export OPENCLAW_GATEWAY_TOKEN=clawbox
+> openclaw agent --agent main -m "hello"
+> ```
 
 ## Architecture
 

@@ -129,8 +129,12 @@ cmd_restart() {
 cmd_status() {
   (cd "$CLAWBOX_DIR" && docker compose ps)
   echo ""
+  echo "Gateway Health"
   OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
     openclaw gateway health 2>/dev/null && echo "Gateway: ✓ healthy" || echo "Gateway: ✗ unreachable"
+  echo ""
+  echo "Connect:  export OPENCLAW_GATEWAY_URL=ws://localhost:18790 OPENCLAW_GATEWAY_TOKEN=clawbox"
+  echo "Run:      clawbox run \"your message\""
 }
 
 cmd_logs() {

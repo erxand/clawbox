@@ -135,5 +135,17 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 - **Verdict:** Isolation is clean. But clawbox does NOT handle true parallelism — concurrent requests queue, not interleave. For users expecting background parallelism (e.g. running two builds at once), this is a documentation gap. The behavior is actually safe, but should be explicitly documented.
 - **Next step:** ISSUE-30 below — document the sequential-session behavior and add a warning to the CLI if a second request arrives while one is in-flight.
 
-### T7 — UX / friction audit
+### T7 — UX / friction audit ✅ 2026-03-26
 Time how long it takes a hypothetical new dev to go from zero to running a task. Where do they get confused? What's the first thing that breaks? What docs are missing?
+
+**Results (2026-03-26):**
+- ✓ 34 pass, 3 warn, 0 fail across 37 checks
+- ✓ Container starts in **9s** (warm image), first task response in **6s** — excellent latency
+- ✓ All core CLI commands present in help output, CLAWBOX_DIR env var documented
+- ✓ All error paths (run/task/cp with no args, unknown command) show helpful messages
+- ✓ assert_container_running warnings work correctly for run and chat
+- ✓ README has troubleshooting section, token-is-irrelevant note is present
+- ⚠ README Quick Start showed raw `openclaw` commands instead of `clawbox run` — **fixed**
+- ⚠ `clawbox status` didn't print the `ws://` URL for copy-paste — **fixed** (now shows connect hint)
+- ⚠ T7 test had a false-negative on `ask` alias detection (grep pattern wrong) — **fixed**
+- **Verdict:** Very strong UX baseline. No friction failures. The two fixes above (README + status) remove the last rough edges for new users.
