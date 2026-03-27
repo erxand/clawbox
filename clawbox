@@ -35,6 +35,40 @@ check_port() {
   fi
 }
 
+assert_container_running() {
+  # Check if the container is running and the gateway port is reachable.
+  # Prints a clear warning and exits 1 if not, so the user isn't silently
+  # routed to the embedded host agent (ISSUE-25).
+  local running
+  running=$(docker inspect "$CONTAINER" --format '{{.State.Running}}' 2>/dev/null || echo "false")
+  if [ "$running" != "true" ]; then
+    echo ""
+    echo "⚠ WARNING: Clawbox container is not running!"
+    echo "  Your request would fall back to the local (host) agent — not the container."
+    echo ""
+    echo "  To start Clawbox:  clawbox start"
+    echo "  To check status:   clawbox status"
+    echo ""
+    exit 1
+  fi
+
+  # Also verify the gateway port is actually reachable (ISSUE-27: container can start
+  # without port bindings after a port conflict)
+  local port_open
+  port_open=$(nc -z 127.0.0.1 18790 2>/dev/null && echo "open" || echo "closed")
+  if [ "$port_open" != "open" ]; then
+    echo ""
+    echo "⚠ WARNING: Container is running but port 18790 is not reachable!"
+    echo "  This can happen after a port conflict — the container may have started"
+    echo "  without its port mappings. Your request would go to the host agent."
+    echo ""
+    echo "  Fix: clawbox stop && clawbox start"
+    echo "  Or:  cd $CLAWBOX_DIR && docker compose up -d --force-recreate"
+    echo ""
+    exit 1
+  fi
+}
+
 # ── Commands ────────────────────────────────────────────────────────
 
 cmd_start() {
@@ -104,6 +138,7 @@ cmd_logs() {
 }
 
 cmd_chat() {
+  assert_container_running
   echo "▶ Opening Clawbox chat (Ctrl+C to exit)..."
   OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
     openclaw tui
@@ -115,6 +150,7 @@ cmd_run() {
     echo "Usage: clawbox run \"your message\""
     exit 1
   fi
+  assert_container_running
   OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
     openclaw agent --agent main -m "$1"
 }
@@ -141,6 +177,7 @@ cmd_task() {
     echo "Usage: clawbox task \"description\""
     exit 1
   fi
+  assert_container_running
   local desc="$1"
   local ts
   ts=$(date '+%Y-%m-%d %H:%M:%S')

@@ -24,6 +24,12 @@
 
 ---
 
+### ISSUE-25: Silent fallback warning (2026-03-26)
+**Problem:** When the clawbox container is stopped or port 18790 is unreachable, `clawbox run/chat/task` silently falls back to the embedded host agent. User gets a response, but from the wrong agent — work in the container is not used, and work done goes nowhere useful.
+**Fix:** Added `assert_container_running` helper to the clawbox CLI. Called before `cmd_run`, `cmd_chat`, `cmd_task`. Prints a clear warning and exits 1 if the container is not running or port 18790 is closed. ✅ Fixed 2026-03-26.
+
+---
+
 ## Bug Fixes Found During Testing
 
 ### ISSUE-29: Wrong workspace path in test scripts
@@ -94,8 +100,19 @@ Start a task, stop mid-way (`clawbox stop`), restart, and ask the agent to conti
 ### T4 — Error recovery
 Deliberately introduce errors during a task (kill a dependency, corrupt a file, break the test suite). Does the agent notice, diagnose, and recover? Or does it spiral?
 
-### T5 — Real-world project onboarding
+### T5 — Real-world project onboarding ✅ 2026-03-26
 Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask the agent to: (1) understand the codebase, (2) add a new feature, (3) write tests, (4) make sure existing tests pass. Measure quality and completeness.
+
+**Results (2026-03-26):**
+- ✓ Agent correctly summarized architecture in a few sentences
+- ✓ Created production-quality rate limiter middleware (zero external dependencies, IP-based, configurable)
+- ✓ Wired middleware into app with env-var configuration (RATE_LIMIT, RATE_WINDOW_MS)
+- ✓ Wrote 9 comprehensive rate limiter tests covering happy path, error path, headers, window reset, custom options
+- ✓ 18/18 tests passing — 9 new + all 9 existing (zero regression)
+- ✓ Completed in 222s (~3.5 min) — well within timeout
+- ⚠️ Test scaffold had a missing directory creation step (mkdir -p src/routes) — fixed in T5 script
+- ⚠️ Agent also auto-created IMPLEMENTATION_SUMMARY.md — slight gold-plating but harmless
+- **Verdict:** Strong end-to-end performance. Agent reads code selectively, produces working features, doesn't break existing tests. Ready for harder tasks (ISSUE-5 from Phase 3: real project from GitHub).
 
 ### T6 — Concurrent task handling
 Run two separate `clawbox run` commands simultaneously pointing at different workspaces. Do they interfere? Are sessions properly isolated?
