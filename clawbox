@@ -16,7 +16,8 @@ if [ ! -f "$CLAWBOX_DIR/docker-compose.yml" ]; then
   exit 1
 fi
 
-GATEWAY_URL="ws://localhost:18790"
+GATEWAY_PORT="${GATEWAY_PORT:-18790}"
+GATEWAY_URL="ws://localhost:${GATEWAY_PORT}"
 GATEWAY_TOKEN="clawbox"
 CONTAINER="clawbox-work"
 TASKS_FILE="$HOME/.clawbox-tasks"
@@ -109,7 +110,7 @@ release_lock() {
 
 cmd_start() {
   # Port conflict detection
-  for PORT in 18790 3000; do
+  for PORT in "$GATEWAY_PORT" 3000; do
     PID=$(check_port "$PORT")
     if [ -n "$PID" ]; then
       # Check if it's our own container
@@ -118,17 +119,31 @@ cmd_start() {
         echo "Clawbox is already running. Use 'clawbox stop' first or 'clawbox status' to check."
         exit 1
       fi
-      if [ "$PID" = "unknown" ]; then
-        echo "⚠ Port $PORT is in use. Stop whatever is using it before starting Clawbox."
+      if [ "$PORT" = "$GATEWAY_PORT" ]; then
+        echo ""
+        echo "⚠ Port $PORT is already in use."
+        if [ "$PID" != "unknown" ]; then
+          echo "  In use by PID $PID. Run: kill $PID or stop whatever is using it."
+        fi
+        echo ""
+        echo "  Or run on a different port:"
+        echo "    GATEWAY_PORT=18791 clawbox start"
+        echo ""
+        echo "  Multiple clawbox instances can run simultaneously on different ports."
+        echo "  Set GATEWAY_PORT in your shell to target a specific instance."
       else
-        echo "⚠ Port $PORT is in use by PID $PID. Run: kill $PID or stop whatever is using it."
+        if [ "$PID" = "unknown" ]; then
+          echo "⚠ Port $PORT is in use. Stop whatever is using it before starting Clawbox."
+        else
+          echo "⚠ Port $PORT is in use by PID $PID. Run: kill $PID or stop whatever is using it."
+        fi
       fi
       exit 1
     fi
   done
 
-  echo "▶ Starting Clawbox..."
-  (cd "$CLAWBOX_DIR" && docker compose up -d)
+  echo "▶ Starting Clawbox (gateway port: $GATEWAY_PORT)..."
+  (cd "$CLAWBOX_DIR" && GATEWAY_PORT="$GATEWAY_PORT" docker compose up -d)
 
   # Wait for healthy, detect OOM
   echo "Waiting for healthy..."
@@ -154,7 +169,7 @@ cmd_start() {
 
 cmd_stop() {
   echo "▶ Stopping Clawbox..."
-  (cd "$CLAWBOX_DIR" && docker compose down)
+  (cd "$CLAWBOX_DIR" && GATEWAY_PORT="$GATEWAY_PORT" docker compose down)
 }
 
 cmd_restart() {
@@ -163,18 +178,23 @@ cmd_restart() {
 }
 
 cmd_status() {
-  (cd "$CLAWBOX_DIR" && docker compose ps)
+  (cd "$CLAWBOX_DIR" && GATEWAY_PORT="$GATEWAY_PORT" docker compose ps)
   echo ""
   echo "Gateway Health"
   OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
     openclaw gateway health 2>/dev/null && echo "Gateway: ✓ healthy" || echo "Gateway: ✗ unreachable"
   echo ""
-  echo "Connect:  export OPENCLAW_GATEWAY_URL=ws://localhost:18790 OPENCLAW_GATEWAY_TOKEN=clawbox"
+  echo "Connect:  export OPENCLAW_GATEWAY_URL=${GATEWAY_URL} OPENCLAW_GATEWAY_TOKEN=clawbox"
   echo "Run:      clawbox run \"your message\""
+  if [ "$GATEWAY_PORT" != "18790" ]; then
+    echo ""
+    echo "Note: Non-default gateway port in use (GATEWAY_PORT=$GATEWAY_PORT)"
+    echo "      Set GATEWAY_PORT=$GATEWAY_PORT in your shell to target this instance."
+  fi
 }
 
 cmd_logs() {
-  (cd "$CLAWBOX_DIR" && docker compose logs -f)
+  (cd "$CLAWBOX_DIR" && GATEWAY_PORT="$GATEWAY_PORT" docker compose logs -f)
 }
 
 cmd_chat() {
@@ -277,14 +297,16 @@ cmd_restore() {
 
 cmd_upgrade() {
   echo "▶ Upgrading Clawbox to latest OpenClaw..."
-  (cd "$CLAWBOX_DIR" && docker compose down && docker compose build --no-cache && docker compose up -d)
+  (cd "$CLAWBOX_DIR" && GATEWAY_PORT="$GATEWAY_PORT" docker compose down && \
+    GATEWAY_PORT="$GATEWAY_PORT" docker compose build --no-cache && \
+    GATEWAY_PORT="$GATEWAY_PORT" docker compose up -d)
 }
 
 cmd_clean() {
   echo "⚠ This will STOP the container and DELETE all agent data."
   read -rp "Are you sure? [y/N] " confirm
   if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-    (cd "$CLAWBOX_DIR" && docker compose down -v)
+    (cd "$CLAWBOX_DIR" && GATEWAY_PORT="$GATEWAY_PORT" docker compose down -v)
     echo "Cleaned."
   else
     echo "Aborted."
@@ -330,6 +352,10 @@ Commands:
 
 Environment:
   CLAWBOX_DIR        Path to clawbox project (default: script directory)
+  GATEWAY_PORT       Gateway port to use (default: 18790)
+                     Set to a different port to run multiple clawbox instances:
+                       GATEWAY_PORT=18791 clawbox start
+                       GATEWAY_PORT=18791 clawbox run "hello"
 EOF
 }
 

@@ -20,6 +20,10 @@ warn()  { echo -e "${YELLOW}⚠${RESET} $*"; }
 error() { echo -e "${RED}✗${RESET} $*" >&2; }
 die()   { error "$@"; exit 1; }
 
+# ── Gateway port configuration ──────────────────────────────────────
+
+GATEWAY_PORT="${GATEWAY_PORT:-18790}"
+
 # ── Preflight checks ────────────────────────────────────────────────
 
 info "Checking prerequisites..."
@@ -71,13 +75,64 @@ EOF
   info ".env created (permissions: 600)."
 fi
 
+# ── Port conflict detection ─────────────────────────────────────────
+
+info "Checking for port conflicts..."
+
+check_port_available() {
+  local port="$1"
+  if command -v lsof &>/dev/null; then
+    local pid
+    pid=$(lsof -ti tcp:"$port" 2>/dev/null | head -1)
+    if [ -n "$pid" ]; then
+      # Check if it's our own clawbox container
+      local container_pid
+      container_pid=$(docker inspect clawbox-work --format '{{.State.Pid}}' 2>/dev/null || echo "")
+      if [ -n "$container_pid" ] && [ "$container_pid" != "0" ] && [ "$pid" = "$container_pid" ]; then
+        return 0  # Our own container — skip
+      fi
+      local proc
+      proc=$(ps -p "$pid" -o comm= 2>/dev/null || echo "pid $pid")
+      warn "Port $port is in use by: $proc (PID $pid)"
+      return 1
+    fi
+  elif nc -z 127.0.0.1 "$port" 2>/dev/null; then
+    warn "Port $port is already in use."
+    return 1
+  fi
+  return 0
+}
+
+PORT_CONFLICT=0
+if ! check_port_available "$GATEWAY_PORT"; then
+  PORT_CONFLICT=1
+fi
+
+if [ "$PORT_CONFLICT" = "1" ]; then
+  echo ""
+  warn "Port conflict detected on gateway port $GATEWAY_PORT."
+  echo ""
+  echo "  Option 1: Stop whatever is using port $GATEWAY_PORT and re-run setup.sh"
+  echo "  Option 2: Run on a different port:"
+  echo "            GATEWAY_PORT=18791 bash setup.sh"
+  echo ""
+  echo "  Multiple clawbox instances can run simultaneously using different ports."
+  echo "  Set GATEWAY_PORT in your shell to target a specific instance:"
+  echo "            export GATEWAY_PORT=18791"
+  echo "            clawbox run \"hello\""
+  echo ""
+  die "Cannot start: port conflict on $GATEWAY_PORT"
+fi
+
+info "Port $GATEWAY_PORT is available."
+
 # ── Build and start ─────────────────────────────────────────────────
 
 info "Building container image..."
-docker compose build --quiet
+GATEWAY_PORT="$GATEWAY_PORT" docker compose build --quiet
 
 info "Starting clawbox-work..."
-docker compose up -d
+GATEWAY_PORT="$GATEWAY_PORT" docker compose up -d
 
 # ── Wait for container to be healthy ────────────────────────────────
 echo ""

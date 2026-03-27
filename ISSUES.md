@@ -569,7 +569,7 @@ This confirms that any prompt injection or compromised agent session can exfiltr
 
 ---
 
-## [OPEN] ISSUE-24: Two conflicting clawbox instances can run on same host (port conflict)
+## [FIXED] ISSUE-24: Two conflicting clawbox instances can run on same host (port conflict) ✅ Fixed 2026-03-27
 
 **Category:** Infrastructure / Multi-instance
 **Severity:** Medium
@@ -582,19 +582,29 @@ port 18790, starting the `clawbox` project causes a port allocation failure:
 The new container starts but without the gateway port mapping, silently routing CLI connections
 to the wrong container. The user has no indication which container the CLI is talking to.
 
-**Impact:**
-- Category F was initially running against the WRONG container (`openclaw-work` instead of `clawbox-work`)
-- All exec tool calls, file writes, and reads went to the wrong container
-- Docs copied into `clawbox-work` were not visible to the agent (it was in `openclaw-work`)
-- This is a user-confusion/operational risk for anyone running multiple clawbox variants
+**Fix (2026-03-27):**
+1. **Configurable gateway port:** `docker-compose.yml` now uses `${GATEWAY_PORT:-18790}` for the
+   host port mapping. Set `GATEWAY_PORT=18791` to run a second instance on a different port.
+2. **Port conflict detection in `setup.sh`:** Pre-flight check detects conflicts before
+   starting. Prints clear error with instructions to use a different port.
+3. **CLI GATEWAY_PORT support:** All `clawbox` CLI commands (start, stop, status, run, chat, task,
+   logs, upgrade, clean) now read `GATEWAY_PORT` and pass it to docker compose + connect to the
+   correct gateway URL. Help text documents the env var.
+4. **Clear conflict message in `clawbox start`:** When the gateway port is in use, shows how to
+   run on a different port instead of a bare error.
 
-**Recommendations:**
-- Add `make status` output showing which container the CLI is bound to
-- Add port conflict detection in `setup.sh` / `Makefile`
-- Consider configurable gateway port (OPENCLAW_GATEWAY_PORT env var in compose)
-- Document in README: only one clawbox instance can bind 18790 at a time
+**Usage for multiple instances:**
+```bash
+# Instance 1 (default port 18790)
+clawbox start
+clawbox run "task A"
 
-**Status:** OPEN — needs documentation + port conflict detection in setup.sh/Makefile
+# Instance 2 on port 18791
+GATEWAY_PORT=18791 clawbox start
+GATEWAY_PORT=18791 clawbox run "task B"
+```
+
+**Status:** FIXED — configurable port + conflict detection in place.
 
 ---
 

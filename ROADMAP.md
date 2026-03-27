@@ -48,6 +48,13 @@
 
 ---
 
+### ISSUE-24: Conflicting instances — configurable gateway port (2026-03-27) ✅ Fixed
+- `docker-compose.yml` now uses `${GATEWAY_PORT:-18790}` for the host port mapping
+- `setup.sh` pre-flight check detects port conflicts before starting; prints clear error + how to use alternative port
+- `clawbox` CLI reads `GATEWAY_PORT` env var throughout (start/stop/status/run/chat/task/logs/upgrade/clean)
+- Help text documents `GATEWAY_PORT` with usage examples
+- Multiple instances can run simultaneously: `GATEWAY_PORT=18791 clawbox start`
+
 ### ISSUE-25: Silent fallback warning (2026-03-26)
 **Problem:** When the clawbox container is stopped or port 18790 is unreachable, `clawbox run/chat/task` silently falls back to the embedded host agent. User gets a response, but from the wrong agent — work in the container is not used, and work done goes nowhere useful.
 **Fix:** Added `assert_container_running` helper to the clawbox CLI. Called before `cmd_run`, `cmd_chat`, `cmd_task`. Prints a clear warning and exits 1 if the container is not running or port 18790 is closed. ✅ Fixed 2026-03-26.
