@@ -101,9 +101,9 @@ The lock is acquired before calling the gateway and released on exit, interrupt,
 **Problem:** If ports 18790 or 3000 are already bound (e.g. previous container still running), `docker compose up` silently succeeds but with no port bindings. CLI connects to wrong instance.
 **Fix:** Pre-flight check in `clawbox start` and `setup.sh` — detect if ports are in use, print which process is holding them, refuse to start until clear.
 
-### ISSUE-28: File ownership mismatch (docker exec cp)
+### ISSUE-28: File ownership mismatch (docker exec cp) ✅ Fixed
 **Problem:** Files copied via `docker cp` from macOS (UID 501) are unreadable by the container agent (UID 1000).
-**Fix:** Add `clawbox cp <src> <dest>` command that wraps `docker cp` + auto-runs `chown node:node` inside the container.
+**Fix:** `clawbox cp <src> <dest>` command wraps `docker cp` + auto-runs `chown node:node` inside the container. Already implemented.
 
 ---
 
@@ -131,7 +131,7 @@ Current interaction: `clawbox run "message"` or `clawbox chat` (TUI). Both are f
 ### Ideas to explore:
 - **`clawbox ask`** — shorter alias, maybe with `-f file` to pass a file as context
 - **Persistent task mode:** `clawbox task "build X"` — agent works on it in the background, you can check status with `clawbox status`, get a summary when done
-- **Context injection:** `clawbox run --context ./src/ "refactor the auth module"` — auto-attaches files as context
+- **Context injection:** `clawbox run --context ./src/ "refactor the auth module"` — auto-attaches files as context ✅ **Implemented (2026-03-27)** — `--context <file|dir>` prepends file contents to the message (skips node_modules, .git, binaries, files >10KB; caps at 50 files / 64KB). Also added `--thinking <level>` flag to `run`/`ask`.
 - **Session naming:** `clawbox chat --session myproject` — named sessions so you can have separate conversation threads per project
 - **Output modes:** `--json` for scripting, `--quiet` for just the final answer, `--verbose` for full tool trace
 
