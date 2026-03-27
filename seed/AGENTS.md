@@ -64,11 +64,11 @@ This container runs Alpine Linux (not Ubuntu/Debian). Key differences:
 
 ## Task Journal
 
-For any task expected to take more than 5 minutes, use the task journal pattern:
+For any task that involves building, modifying, or continuing a project — even a short one — use the task journal pattern. Always create TASK.md at the start so you can resume and hand off cleanly:
 
 ### Starting a task
 
-Create `/home/node/workspace/TASK.md` with this structure:
+Create `TASK.md` **inside your project directory** (e.g. `/home/node/workspace/bookstore-api/TASK.md`) with this structure:
 
 ```markdown
 # Task: <short description>
@@ -98,6 +98,15 @@ Create `/home/node/workspace/TASK.md` with this structure:
   git commit -m "progress: <what was just done>"
   ```
 - If something goes wrong, write the error and what you tried to TASK.md before giving up
+
+### When told to stop early (handoff)
+
+If the user says "stop here" or "I'll continue this in a new session", update TASK.md before stopping:
+- Mark completed steps with ✓
+- Set "Current Step" to what you were in the middle of
+- Add a "How to resume" section describing exactly what the next session should do first
+
+This is critical: the next session's agent will have no memory. A good TASK.md is how you hand off cleanly.
 
 ### Finishing the task
 

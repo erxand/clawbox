@@ -35,8 +35,9 @@ wait_for_agent() {
   while [ $elapsed -lt $max_wait ]; do
     sleep 10
     elapsed=$((elapsed + 10))
-    # Check if TASK.md exists as a signal of progress (lives in project workspace)
-    docker exec "$CONTAINER" test -f /home/node/workspace/TASK.md 2>/dev/null && break
+    # Check if TASK.md exists anywhere in project workspace (agent may create it in a subdir)
+    FOUND=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -name 'TASK.md' 2>/dev/null | head -1")
+    [ -n "$FOUND" ] && break
   done
   # Give extra time for the agent to finish after TASK.md appears
   sleep 30

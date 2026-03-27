@@ -10,7 +10,7 @@
 - ⚠️ `ROUTER_STATS_SUMMARY.md` auto-created but not explicitly asked for — agent gold-plates a bit
 - **Verdict:** Strong performance overall. The wrong-file issue is worth noting as a codebase navigation quirk — agent doesn't always distinguish source from vendored deps.
 
-### T3 — Multi-session continuity (2026-03-26, re-run 2026-03-27)
+### T3 — Multi-session continuity (2026-03-26, re-run 2026-03-27, re-run 2026-03-27 #2)
 - ✓ Agent completed the task both sessions (bookstore API with all endpoints working)
 - ✓ GET /books, GET /books/1, POST /books, DELETE /books/1 all return correct responses
 - ✓ Session 2 agent reconstructed the full API in a fresh container start (state persisted via volume)
@@ -18,6 +18,11 @@
 - ✗ Session 2 agent said "workspace was reset, let me recreate" instead of reading existing TASK.md — it rebuilt from scratch rather than truly continuing
 - **Root cause:** Agent doesn't proactively look for TASK.md before starting; it assumes a fresh state. seed/AGENTS.md could be more explicit about checking for existing project state on session start.
 - **Fix applied (2026-03-27):** T3 script now searches workspace recursively for TASK.md, curl checks run inside container (ports not mapped to host by default), node_modules filtered from file listings
+- **Fix applied (2026-03-27 #2, ISSUE-32):** Updated seed/AGENTS.md — (1) task journal now required for ALL project tasks (not just >5min ones); (2) added explicit "stop early / handoff" section with instructions to update TASK.md before stopping; (3) clarified TASK.md should go inside the project dir. Also updated T3 `wait_for_agent` to search recursively for TASK.md. Re-run results:
+  - ✓ Session 1 created TASK.md with proper plan (project startup + handoff section)
+  - ✓ Session 2 continued correctly — TASK.md shows session 2 work layered on session 1
+  - ⚠️ Session 2 still says "workspace was reset" but this is misleading — agent actually DID read TASK.md and continued properly (GET /books shown as done, new endpoints added correctly)
+  - **Verdict:** Continuity now working. "Workspace was reset" phrasing is benign/cosmetic — agent behavior is correct. ISSUE-32 closed.
 
 ### T4 — Error recovery (2026-03-26)
 - ✓ Agent correctly diagnosed `MODULE_NOT_FOUND` error in 26s
@@ -43,13 +48,11 @@
 ```
 The lock is acquired before calling the gateway and released on exit, interrupt, or termination. Stale locks from crashed processes are auto-cleaned (checks `kill -0 <pid>` liveness).
 
-### ISSUE-32: T3 session 2 rebuilds from scratch instead of resuming from TASK.md (2026-03-27)
+### ISSUE-32: T3 session 2 rebuilds from scratch instead of resuming from TASK.md ✅ Fixed 2026-03-27
 **Problem:** When asked to "continue the bookstore API from where you left off. Check TASK.md for context," the agent says "the workspace was reset, let me recreate the project" and rebuilds from scratch — ignoring the TASK.md it created in session 1. This defeats the purpose of the continuity test.
-**Root cause:** The agent starts each session by reading its agent workspace (`/home/node/.openclaw/workspace/`), not the project workspace (`/home/node/workspace/`). The TASK.md in the project dir is not in the automatic startup read path.
-**Fix options:**
-1. Update `seed/AGENTS.md` startup instructions to also scan `/home/node/workspace/TASK.md` (and recursively any `*/TASK.md`) on session start
-2. Add a heartbeat-style check: "at session start, before doing anything, list `/home/node/workspace/` and read any TASK.md found"
-3. Explicitly tell the agent in the continuation message: "Check `/home/node/workspace/` first — there may be existing work there"
+**Root cause:** Two issues: (1) AGENTS.md only required task journals for tasks >5min, so short session-1 tasks never created TASK.md; (2) the TASK.md that DID get created was in a subdirectory, not the root.
+**Fix applied:** Updated `seed/AGENTS.md`: task journal is now required for ALL project tasks regardless of duration. Added explicit "stop early / handoff" instructions. Updated T3 test to search recursively for TASK.md. Applied fix directly to running container via volume update.
+**Result:** TASK.md now created reliably. Session 2 correctly layers work on session 1 state. Agent says "workspace was reset" but behavior is correct — phrase is cosmetic. ✅
 
 ### ISSUE-33: Test scripts used host curl for endpoints that are container-internal (2026-03-27)
 **Problem:** T1, T3 test scripts used `curl http://localhost:3000/...` from the host, but ports 3000/3001 are commented out in docker-compose.yml by default. All endpoint checks returned FAIL even when the server was running fine inside the container.
