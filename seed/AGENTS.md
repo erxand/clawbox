@@ -76,12 +76,17 @@ Create `TASK.md` **inside your project directory** (e.g. `/home/node/workspace/b
 **Goal:** <what you're trying to achieve>
 
 ## Steps
+<!-- After completing EACH step, run: git -C /home/node/workspace add -A && git -C /home/node/workspace commit -m "progress: <step name>" -->
 1. [ ] Step one
 2. [ ] Step two
 3. [ ] ...
 
 ## Current Step
 <which step you're on and what you're doing>
+
+## Git Log
+<!-- Updated after each commit -->
+(no commits yet)
 
 ## Blockers
 <anything preventing progress — empty if none>
@@ -90,13 +95,20 @@ Create `TASK.md` **inside your project directory** (e.g. `/home/node/workspace/b
 ### During the task
 
 - Update TASK.md as you complete steps (check them off, update "Current Step")
-- After each major step, commit your progress:
+- **REQUIRED: After each major step, commit your progress.** This is not optional — commits
+  are what allow the task to be resumed if something goes wrong mid-way. Do not skip this.
   ```sh
-  cd /home/node/workspace
-  git init 2>/dev/null || true
-  git add -A
-  git commit -m "progress: <what was just done>"
+  git -C /home/node/workspace init 2>/dev/null || true
+  git -C /home/node/workspace add -A
+  git -C /home/node/workspace commit -m "progress: <what was just done>"
   ```
+  Then update the "Git Log" section in TASK.md with the commit hash and message.
+
+  Examples of "major steps" that warrant a commit:
+  - Created project scaffold / package.json installed
+  - Finished the backend / wrote main server file
+  - All tests passing
+  - Frontend complete
 - If something goes wrong, write the error and what you tried to TASK.md before giving up
 
 ### When told to stop early (handoff)

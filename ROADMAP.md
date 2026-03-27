@@ -30,6 +30,22 @@
 - ✓ Verified server starts and GET / returns 200
 - No issues observed — agent performs well on straightforward error recovery
 
+### T1 — Long-running task (2026-03-27 runs)
+**Run 1 (2026-03-27 08:41):** Agent built full-stack task manager app. TASK.md created, 5 commits made.
+- Result file reported "Frontend not reachable (HTTP 404)" and "API not reachable (HTTP 000)" → **FALSE NEGATIVES**
+- Root cause: test checked only `localhost:3000/` (root), which returns 404 for API servers. Frontend was at 8080, not checked.
+
+**Run 2 (2026-03-27 10:54):** Same task, same app. 41/41 tests passing, both servers running, 5 commits.
+- Result file showed same false negatives. Post-hoc manual check confirmed the app was fully working.
+
+**Fix (2026-03-27 — ISSUE-35):** T1 endpoint detection overhauled:
+- New `check_port_smart` function probes multiple paths per port (`/tasks`, `/api/tasks`, `/api`, `/health`, `/login`, etc.)
+- Any non-000 response = server is alive (401 = auth working, 302 = redirect, 200 = success)
+- Explicit `npm test` run inside container for definitive pass/fail — most reliable signal
+- `SERVER_ALIVE` flag now set correctly when any port has a responding server
+
+**Verified against live container:** port 3000 → 401 at `/api/tasks` (auth gating works), port 8080 → 200 (frontend), 41/41 tests passing. ✅ ISSUE-35 Fixed 2026-03-27
+
 ---
 
 ### ISSUE-25: Silent fallback warning (2026-03-26)

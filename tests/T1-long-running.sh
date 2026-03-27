@@ -30,7 +30,7 @@ sleep 5
 
 # ── Send task ───────────────────────────────────────────────────────
 
-TASK_MSG="Build a full task management web app with: (1) Express backend with SQLite, (2) Multiple API endpoints: GET/POST/PUT/DELETE /tasks, GET /tasks/:id, POST /tasks/:id/complete, (3) User authentication (simple session-based), (4) A vanilla JS frontend with login, task list, add task, mark complete, delete. (5) Write a test suite that tests all API endpoints. Start both servers and run the tests. Use TASK.md to track your progress."
+TASK_MSG="Build a full task management web app with: (1) Express backend with SQLite, (2) Multiple API endpoints: GET/POST/PUT/DELETE /tasks, GET /tasks/:id, POST /tasks/:id/complete, (3) User authentication (simple session-based), (4) A vanilla JS frontend with login, task list, add task, mark complete, delete. (5) Write a test suite that tests all API endpoints. Start both servers and run the tests. Use TASK.md to track your progress. IMPORTANT: Initialize git in /home/node/workspace and commit after each major step (scaffold done, backend done, tests passing, frontend done, etc.) so work can be recovered if interrupted."
 
 log "Sending task to agent..."
 START_TIME=$(date +%s)
@@ -55,8 +55,8 @@ while [ $(($(date +%s) - START_TIME)) -lt $TIMEOUT_SECONDS ]; do
     break
   fi
 
-  # Check TASK.md (lives in PROJECT workspace, not agent workspace)
-  TASK_CONTENT=$(docker exec "$CONTAINER" cat /home/node/workspace/TASK.md 2>/dev/null || echo "")
+  # Check TASK.md (may be in project subdir, search recursively — ISSUE-34)
+  TASK_CONTENT=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -name TASK.md -not -path '*/node_modules/*' 2>/dev/null | head -1 | xargs cat 2>/dev/null" || echo "")
   if [ -n "$TASK_CONTENT" ]; then
     TASK_MD_FOUND="yes"
     CURRENT_STEP=$(echo "$TASK_CONTENT" | grep -A1 "Current Step" | tail -1 || echo "unknown")
@@ -79,12 +79,73 @@ ELAPSED=$(( END_TIME - START_TIME ))
 # ── Verify results ─────────────────────────────────────────────────
 
 log "Verifying endpoints..."
-# Check from INSIDE the container (ports 3000/3001 not mapped to host by default in docker-compose.yml)
-CURL_3000=$(docker exec "$CONTAINER" sh -c "curl -s -o /dev/null -w '%{http_code}' http://localhost:3000 2>/dev/null" || echo "000")
-CURL_3001=$(docker exec "$CONTAINER" sh -c "curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/tasks 2>/dev/null" || echo "000")
+# Check from INSIDE the container (ports not mapped to host by default in docker-compose.yml)
+# The agent may use any port and any path — scan common ports AND common API paths.
+# A 404 at root is EXPECTED for an API server; we check multiple paths and consider any
+# non-000 (non-timeout) response as "server is responding".
 
-# Final TASK.md content (project workspace)
-FINAL_TASK_MD=$(docker exec "$CONTAINER" cat /home/node/workspace/TASK.md 2>/dev/null || echo "(not found)")
+# Helper: returns the best HTTP status for a given port across multiple paths
+check_port_smart() {
+  local port="$1"
+  local paths="/ /tasks /api/tasks /api /health /ping /login /books /api/books"
+  local best_code="000"
+  local best_path="/"
+  for path in $paths; do
+    local code
+    code=$(docker exec "$CONTAINER" sh -c "curl -s -o /dev/null -w '%{http_code}' http://localhost:${port}${path} 2>/dev/null" 2>/dev/null || echo "000")
+    # 200 or 401 or 302 all mean "server is running" (401 = auth required, 302 = redirect)
+    if [ "$code" != "000" ] && [ "$code" != "404" ]; then
+      best_code="$code"
+      best_path="$path"
+      break
+    elif [ "$code" = "404" ]; then
+      # Better than 000 — server is responding, just not at this path
+      best_code="$code"
+      best_path="$path"
+    fi
+  done
+  echo "${best_code}:${best_path}"
+}
+
+PORT_3000_RESULT=$(check_port_smart 3000)
+PORT_3001_RESULT=$(check_port_smart 3001)
+PORT_8080_RESULT=$(check_port_smart 8080)
+CURL_3000=$(echo "$PORT_3000_RESULT" | cut -d: -f1)
+CURL_3001=$(echo "$PORT_3001_RESULT" | cut -d: -f1)
+CURL_8080=$(echo "$PORT_8080_RESULT" | cut -d: -f1)
+PATH_3000=$(echo "$PORT_3000_RESULT" | cut -d: -f2)
+PATH_3001=$(echo "$PORT_3001_RESULT" | cut -d: -f2)
+PATH_8080=$(echo "$PORT_8080_RESULT" | cut -d: -f2)
+
+# Check if any port has a running HTTP server (any non-000 code = server is up)
+SERVER_ALIVE="no"
+for code in $CURL_3000 $CURL_3001 $CURL_8080; do
+  [ "$code" != "000" ] && SERVER_ALIVE="yes" && break
+done
+
+# Count running Node.js processes serving HTTP (more reliable than port check)
+NODE_SERVERS=$(docker exec "$CONTAINER" sh -c "ps aux 2>/dev/null | grep -c '[n]ode'" 2>/dev/null || echo "0")
+NODE_SERVERS=$(echo "$NODE_SERVERS" | tr -d ' ')
+
+# Run tests inside the container (find the project dir and run npm test)
+log "Running tests inside container..."
+PROJECT_DIR=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -name 'package.json' -not -path '*/node_modules/*' 2>/dev/null | head -1 | xargs dirname 2>/dev/null" 2>/dev/null || echo "")
+TEST_RESULTS="(not run)"
+TESTS_PASSING="unknown"
+if [ -n "$PROJECT_DIR" ]; then
+  TEST_OUTPUT=$(docker exec "$CONTAINER" sh -c "cd '$PROJECT_DIR' && npm test 2>&1 | tail -20" 2>/dev/null || echo "(test run failed)")
+  TEST_RESULTS="$TEST_OUTPUT"
+  # Check if tests passed (look for common pass indicators)
+  if echo "$TEST_OUTPUT" | grep -qiE '(passing|tests passed|all.*pass|✓|✗.*0)'; then
+    TESTS_PASSING="yes"
+  elif echo "$TEST_OUTPUT" | grep -qiE '(failing|failed|error)'; then
+    TESTS_PASSING="no"
+  fi
+fi
+
+# Final TASK.md content (search recursively in project workspace — ISSUE-34)
+FINAL_TASK_MD=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -name TASK.md -not -path '*/node_modules/*' 2>/dev/null | head -1 | xargs cat 2>/dev/null" || echo "(not found)")
+[ -z "$FINAL_TASK_MD" ] && FINAL_TASK_MD="(not found)"
 
 # Git log (project workspace)
 GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd /home/node/workspace && git log --oneline 2>/dev/null" || echo "(no git repo)")
@@ -106,9 +167,18 @@ Agent was asked to build a full-stack task management web app with Express, SQLi
 | Total time | ${ELAPSED}s |
 | Used TASK.md | $TASK_MD_FOUND |
 | Git commits | $GIT_COMMITS |
-| Port 3000 (frontend) | HTTP $CURL_3000 |
-| Port 3001 (API) | HTTP $CURL_3001 |
+| Port 3000 (best path: $PATH_3000) | HTTP $CURL_3000 |
+| Port 3001 (best path: $PATH_3001) | HTTP $CURL_3001 |
+| Port 8080 (best path: $PATH_8080) | HTTP $CURL_8080 |
+| Any server alive | $SERVER_ALIVE |
+| Node processes | $NODE_SERVERS |
+| Tests passing | $TESTS_PASSING |
 | Poll cycles | $POLLS |
+
+## Test Output (last 20 lines)
+\`\`\`
+$TEST_RESULTS
+\`\`\`
 
 ## Final TASK.md
 \`\`\`
@@ -123,8 +193,17 @@ $GIT_LOG
 ## Assessment
 $([ "$TASK_MD_FOUND" = "yes" ] && echo "✓ Agent used TASK.md for progress tracking" || echo "✗ Agent did NOT use TASK.md")
 $([ "$GIT_COMMITS" -gt 0 ] 2>/dev/null && echo "✓ Agent made $GIT_COMMITS git commits" || echo "✗ Agent made no git commits")
-$([ "$CURL_3000" = "200" ] && echo "✓ Frontend reachable" || echo "✗ Frontend not reachable (HTTP $CURL_3000)")
-$([ "$CURL_3001" = "200" ] && echo "✓ API reachable" || echo "✗ API not reachable (HTTP $CURL_3001)")
+$([ "$TESTS_PASSING" = "yes" ] && echo "✓ Tests passing" || echo "⚠ Tests status: $TESTS_PASSING")
+$([ "$SERVER_ALIVE" = "yes" ] && echo "✓ HTTP server responding on at least one port" || echo "✗ No HTTP server detected on ports 3000/3001/8080")
+$([ "$CURL_3000" != "000" ] && echo "✓ Port 3000: HTTP $CURL_3000 (path: $PATH_3000)" || echo "⚠ Port 3000: no response (server may have stopped after test run)")
+$([ "$CURL_3001" != "000" ] && echo "✓ Port 3001: HTTP $CURL_3001 (path: $PATH_3001)" || echo "⚠ Port 3001: no response")
+$([ "$CURL_8080" != "000" ] && echo "✓ Port 8080: HTTP $CURL_8080 (path: $PATH_8080)" || echo "⚠ Port 8080: no response")
+$([ "$NODE_SERVERS" -gt 0 ] 2>/dev/null && echo "✓ Node.js process(es) running ($NODE_SERVERS found)" || echo "⚠ No Node.js processes detected")
+
+### Notes on endpoint detection
+- A 404 at root is EXPECTED for API servers (real endpoints are /tasks, /api/etc.)
+- This test now probes multiple paths and marks a server "alive" if any path responds
+- Server may stop after completing the test suite (expected behavior for test runs)
 RESULT_EOF
 
 log "Results written to $RESULT_FILE"
