@@ -28,6 +28,14 @@
 **Problem:** When the clawbox container is stopped or port 18790 is unreachable, `clawbox run/chat/task` silently falls back to the embedded host agent. User gets a response, but from the wrong agent — work in the container is not used, and work done goes nowhere useful.
 **Fix:** Added `assert_container_running` helper to the clawbox CLI. Called before `cmd_run`, `cmd_chat`, `cmd_task`. Prints a clear warning and exits 1 if the container is not running or port 18790 is closed. ✅ Fixed 2026-03-26.
 
+### ISSUE-30: Concurrent requests silently queue (2026-03-26)
+**Problem:** When two `clawbox run` commands fire simultaneously, the gateway serializes them — task B waits for task A to finish before starting. There's no warning, no queued-task indicator, and no ETA. Users expecting parallelism get silent delay.
+**Fix options:**
+1. **Document it** — add a "Clawbox is single-session" note to README. Lowest effort, honest.
+2. **Queue indicator** — when a request is received while another is in-flight, print "⏳ Another task is running. Your request will start when it completes." This is a UX fix.
+3. **Reject concurrent requests** — immediately return an error if the session is busy, so users don't silently wait. Let them retry.
+**Recommended:** Option 2 (queue indicator) — safe, no behavior change, informs the user.
+
 ---
 
 ## Bug Fixes Found During Testing
@@ -114,8 +122,18 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - ⚠️ Agent also auto-created IMPLEMENTATION_SUMMARY.md — slight gold-plating but harmless
 - **Verdict:** Strong end-to-end performance. Agent reads code selectively, produces working features, doesn't break existing tests. Ready for harder tasks (ISSUE-5 from Phase 3: real project from GitHub).
 
-### T6 — Concurrent task handling
+### T6 — Concurrent task handling ✅ 2026-03-26
 Run two separate `clawbox run` commands simultaneously pointing at different workspaces. Do they interfere? Are sessions properly isolated?
+
+**Results (2026-03-26):**
+- ✓ Both tasks completed — no timeouts (A: 63s, B: 114s total wall time)
+- ✓ Task A: math.js + 18 tests, all passing
+- ✓ Task B: strings.js + 29 tests, all passing
+- ✓ Zero cross-contamination — each task wrote only to its own directory
+- ⚠️ Tasks ran **sequentially, not truly in parallel** — Task B took an extra ~50s beyond A's completion, suggesting the gateway serializes concurrent requests into a queue
+- ⚠️ The 2-second stagger between requests means task B waited for task A to complete before starting — this is the main finding
+- **Verdict:** Isolation is clean. But clawbox does NOT handle true parallelism — concurrent requests queue, not interleave. For users expecting background parallelism (e.g. running two builds at once), this is a documentation gap. The behavior is actually safe, but should be explicitly documented.
+- **Next step:** ISSUE-30 below — document the sequential-session behavior and add a warning to the CLI if a second request arrives while one is in-flight.
 
 ### T7 — UX / friction audit
 Time how long it takes a hypothetical new dev to go from zero to running a task. Where do they get confused? What's the first thing that breaks? What docs are missing?
