@@ -658,7 +658,7 @@ The agent must use explicit absolute paths to access project files.
 
 ---
 
-## [FIXED] ISSUE-27: docker compose up -d may start container without port bindings after port conflict
+## [FIXED] ISSUE-27: docker compose up -d may start container without port bindings after port conflict ✅ Fixed 2026-03-27
 
 **Category:** Infrastructure / Docker networking
 **Severity:** Medium
@@ -693,11 +693,11 @@ This is distinct from a hard "port already allocated" error — Docker silently 
 - Warn user if any of 18790/3000/3001 are already in use before starting
 - Document: `docker compose up -d --force-recreate` as the fix command
 
-**Status:** OPEN — needs port conflict detection in start scripts
+**Status:** FIXED — `cmd_start` in clawbox CLI checks ports 18790 and 3000 before starting, warns and exits if occupied. `assert_container_running` also verifies port 18790 is reachable before allowing run/chat/task commands.
 
 ---
 
-## [FIXED] ISSUE-28: docker cp preserves macOS UID (501) not container UID (1000); files created with mode 600 are unreadable by container agent
+## [FIXED] ISSUE-28: docker cp preserves macOS UID (501) not container UID (1000); files created with mode 600 are unreadable by container agent ✅ Fixed 2026-03-27
 
 **Category:** Infrastructure / Docker file operations
 **Severity:** Medium (Category F specific — doc seeding)
@@ -741,7 +741,7 @@ Option C: Write files to the container via the agent's `write` tool (already cor
 - Consider creating a `scripts/seed-docs.sh` helper that does docker cp + chown in one step
 - Document in README: "When manually copying files into the container, run chown after cp"
 
-**Status:** OPEN — procedure issue, can be fixed with chown helper script
+**Status:** FIXED — `clawbox cp <src> <dest>` command wraps `docker cp` + runs `chown -R node:node` automatically. README documents the `clawbox cp` command as the correct way to copy files into the container.
 
 ---
 

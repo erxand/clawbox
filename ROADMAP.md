@@ -10,11 +10,14 @@
 - ⚠️ `ROUTER_STATS_SUMMARY.md` auto-created but not explicitly asked for — agent gold-plates a bit
 - **Verdict:** Strong performance overall. The wrong-file issue is worth noting as a codebase navigation quirk — agent doesn't always distinguish source from vendored deps.
 
-### T3 — Multi-session continuity (2026-03-26)
-- ✓ Agent completed the task (bookstore API with all endpoints working)
-- ✗ Agent never created TASK.md — continuity tracking mechanism not used
-- ✗ Tests were checking wrong workspace path (`/home/node/workspace` instead of `/home/node/.openclaw/workspace`)
-- **Note:** T3 result was partially misleading due to path bug — files were actually created in the right place
+### T3 — Multi-session continuity (2026-03-26, re-run 2026-03-27)
+- ✓ Agent completed the task both sessions (bookstore API with all endpoints working)
+- ✓ GET /books, GET /books/1, POST /books, DELETE /books/1 all return correct responses
+- ✓ Session 2 agent reconstructed the full API in a fresh container start (state persisted via volume)
+- ✗ Agent creates TASK.md inside the project subdirectory (e.g. `bookstore-api-new/TASK.md`) instead of `/home/node/workspace/TASK.md` — test now searches recursively for TASK.md anywhere in workspace
+- ✗ Session 2 agent said "workspace was reset, let me recreate" instead of reading existing TASK.md — it rebuilt from scratch rather than truly continuing
+- **Root cause:** Agent doesn't proactively look for TASK.md before starting; it assumes a fresh state. seed/AGENTS.md could be more explicit about checking for existing project state on session start.
+- **Fix applied (2026-03-27):** T3 script now searches workspace recursively for TASK.md, curl checks run inside container (ports not mapped to host by default), node_modules filtered from file listings
 
 ### T4 — Error recovery (2026-03-26)
 - ✓ Agent correctly diagnosed `MODULE_NOT_FOUND` error in 26s
@@ -39,6 +42,18 @@
    To cancel and run yours:  kill 12345 && clawbox run "..."
 ```
 The lock is acquired before calling the gateway and released on exit, interrupt, or termination. Stale locks from crashed processes are auto-cleaned (checks `kill -0 <pid>` liveness).
+
+### ISSUE-32: T3 session 2 rebuilds from scratch instead of resuming from TASK.md (2026-03-27)
+**Problem:** When asked to "continue the bookstore API from where you left off. Check TASK.md for context," the agent says "the workspace was reset, let me recreate the project" and rebuilds from scratch — ignoring the TASK.md it created in session 1. This defeats the purpose of the continuity test.
+**Root cause:** The agent starts each session by reading its agent workspace (`/home/node/.openclaw/workspace/`), not the project workspace (`/home/node/workspace/`). The TASK.md in the project dir is not in the automatic startup read path.
+**Fix options:**
+1. Update `seed/AGENTS.md` startup instructions to also scan `/home/node/workspace/TASK.md` (and recursively any `*/TASK.md`) on session start
+2. Add a heartbeat-style check: "at session start, before doing anything, list `/home/node/workspace/` and read any TASK.md found"
+3. Explicitly tell the agent in the continuation message: "Check `/home/node/workspace/` first — there may be existing work there"
+
+### ISSUE-33: Test scripts used host curl for endpoints that are container-internal (2026-03-27)
+**Problem:** T1, T3 test scripts used `curl http://localhost:3000/...` from the host, but ports 3000/3001 are commented out in docker-compose.yml by default. All endpoint checks returned FAIL even when the server was running fine inside the container.
+**Fix applied:** T1 and T3 now use `docker exec "$CONTAINER" sh -c "curl ..."` to check endpoints from inside the container. ✅
 
 ---
 

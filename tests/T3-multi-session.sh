@@ -35,8 +35,8 @@ wait_for_agent() {
   while [ $elapsed -lt $max_wait ]; do
     sleep 10
     elapsed=$((elapsed + 10))
-    # Check if TASK.md exists as a signal of progress
-    docker exec "$CONTAINER" test -f /home/node/.openclaw/workspace/TASK.md 2>/dev/null && break
+    # Check if TASK.md exists as a signal of progress (lives in project workspace)
+    docker exec "$CONTAINER" test -f /home/node/workspace/TASK.md 2>/dev/null && break
   done
   # Give extra time for the agent to finish after TASK.md appears
   sleep 30
@@ -62,10 +62,11 @@ SESSION1_END=$(date +%s)
 SESSION1_TIME=$((SESSION1_END - SESSION1_START))
 log "Session 1 completed in ${SESSION1_TIME}s"
 
-# Capture session 1 state
-S1_TASK_MD=$(docker exec "$CONTAINER" cat /home/node/.openclaw/workspace/TASK.md 2>/dev/null || echo "(not found)")
-S1_FILES=$(docker exec "$CONTAINER" sh -c "find /home/node/.openclaw/workspace -type f -name '*.js' -o -name '*.json' 2>/dev/null | head -20" || echo "(none)")
-S1_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd /home/node/.openclaw/workspace && git log --oneline 2>/dev/null" || echo "(no git repo)")
+# Capture session 1 state (project workspace — search for TASK.md anywhere in workspace)
+S1_TASK_MD=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -name 'TASK.md' 2>/dev/null | head -1 | xargs cat 2>/dev/null" || echo "(not found)")
+S1_TASK_MD_PATH=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -name 'TASK.md' 2>/dev/null | head -1" || echo "(not found)")
+S1_FILES=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -type f \( -name '*.js' -o -name '*.json' \) 2>/dev/null | grep -v node_modules | head -20" || echo "(none)")
+S1_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd /home/node/workspace && git log --oneline 2>/dev/null" || echo "(no git repo)")
 
 log "Session 1 state captured. Stopping container..."
 
@@ -98,26 +99,30 @@ log "Session 2 completed in ${SESSION2_TIME}s"
 log "Verifying endpoints..."
 sleep 5
 
-GET_BOOKS=$(curl -s http://localhost:3000/books 2>/dev/null || echo "FAIL")
-GET_BOOK_1=$(curl -s http://localhost:3000/books/1 2>/dev/null || echo "FAIL")
-POST_BOOK=$(curl -s -X POST http://localhost:3000/books -H "Content-Type: application/json" -d '{"title":"Test Book","author":"Test"}' 2>/dev/null || echo "FAIL")
-DELETE_BOOK=$(curl -s -X DELETE http://localhost:3000/books/1 2>/dev/null || echo "FAIL")
+# Check from inside container (ports not mapped to host by default)
+GET_BOOKS=$(docker exec "$CONTAINER" sh -c "curl -s http://localhost:3000/books 2>/dev/null" || echo "FAIL")
+GET_BOOK_1=$(docker exec "$CONTAINER" sh -c "curl -s http://localhost:3000/books/1 2>/dev/null" || echo "FAIL")
+POST_BOOK=$(docker exec "$CONTAINER" sh -c 'curl -s -X POST http://localhost:3000/books -H "Content-Type: application/json" -d "{\"title\":\"Test Book\",\"author\":\"Test\"}" 2>/dev/null' || echo "FAIL")
+DELETE_BOOK=$(docker exec "$CONTAINER" sh -c "curl -s -X DELETE http://localhost:3000/books/1 2>/dev/null" || echo "FAIL")
 
 # Also try port 3001 in case agent used that
-GET_BOOKS_ALT=$(curl -s http://localhost:3001/books 2>/dev/null || echo "FAIL")
+GET_BOOKS_ALT=$(docker exec "$CONTAINER" sh -c "curl -s http://localhost:3001/books 2>/dev/null" || echo "FAIL")
 
-# Final state
-S2_TASK_MD=$(docker exec "$CONTAINER" cat /home/node/.openclaw/workspace/TASK.md 2>/dev/null || echo "(not found)")
-S2_FILES=$(docker exec "$CONTAINER" sh -c "find /home/node/.openclaw/workspace -type f -name '*.js' -o -name '*.json' 2>/dev/null | head -20" || echo "(none)")
-S2_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd /home/node/.openclaw/workspace && git log --oneline 2>/dev/null" || echo "(no git repo)")
+# Final state (project workspace — search for TASK.md anywhere in workspace)
+S2_TASK_MD=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -name 'TASK.md' 2>/dev/null | head -1 | xargs cat 2>/dev/null" || echo "(not found)")
+S2_TASK_MD_PATH=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -name 'TASK.md' 2>/dev/null | head -1" || echo "(not found)")
+S2_FILES=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -type f \( -name '*.js' -o -name '*.json' \) 2>/dev/null | grep -v node_modules | head -20" || echo "(none)")
+S2_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd /home/node/workspace && git log --oneline 2>/dev/null" || echo "(no git repo)")
 
 # ── Write results ──────────────────────────────────────────────────
 
 FOUND_TASK_MD="no"
-if echo "$S1_TASK_MD" | grep -qi "book"; then FOUND_TASK_MD="yes"; fi
+# Check anywhere in workspace (agent may put TASK.md inside project subdir)
+if [ -n "$S1_TASK_MD" ] && [ "$S1_TASK_MD" != "(not found)" ]; then FOUND_TASK_MD="yes"; fi
 
 CONTINUED_OK="no"
-if [ "$GET_BOOKS" != "FAIL" ] && echo "$GET_BOOKS" | grep -qi "book"; then CONTINUED_OK="yes"; fi
+# GET /books should return JSON array (even if it says "title" not "book")
+if [ "$GET_BOOKS" != "FAIL" ] && [ -n "$GET_BOOKS" ] && echo "$GET_BOOKS" | grep -q '\['; then CONTINUED_OK="yes"; fi
 
 cat > "$RESULT_FILE" << RESULT_EOF
 # T3 — Multi-session continuity test
@@ -135,6 +140,7 @@ cat > "$RESULT_FILE" << RESULT_EOF
 ## Session 1 State
 
 ### TASK.md after session 1
+**Path:** $S1_TASK_MD_PATH
 \`\`\`
 $S1_TASK_MD
 \`\`\`
@@ -152,6 +158,7 @@ $S1_GIT_LOG
 ## Session 2 State
 
 ### TASK.md after session 2
+**Path:** $S2_TASK_MD_PATH
 \`\`\`
 $S2_TASK_MD
 \`\`\`

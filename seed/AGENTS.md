@@ -10,8 +10,11 @@ Before doing anything else:
 2. Read `USER.md` — who you're helping
 3. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
 4. Read `MEMORY.md` if it exists — long-term curated memory
+5. **Check for active work:** Scan `/home/node/workspace/` for any `TASK.md` files. If found, read them — you may be resuming an in-progress task.
 
 Don't ask permission. Just do it.
+
+If you find an existing TASK.md, **do not assume a fresh start** — read it and use it as context. You may be continuing work from a previous session.
 
 ## Memory
 
