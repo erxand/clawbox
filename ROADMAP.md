@@ -28,13 +28,17 @@
 **Problem:** When the clawbox container is stopped or port 18790 is unreachable, `clawbox run/chat/task` silently falls back to the embedded host agent. User gets a response, but from the wrong agent — work in the container is not used, and work done goes nowhere useful.
 **Fix:** Added `assert_container_running` helper to the clawbox CLI. Called before `cmd_run`, `cmd_chat`, `cmd_task`. Prints a clear warning and exits 1 if the container is not running or port 18790 is closed. ✅ Fixed 2026-03-26.
 
-### ISSUE-30: Concurrent requests silently queue (2026-03-26)
+### ISSUE-30: Concurrent requests silently queue ✅ Fixed 2026-03-27
 **Problem:** When two `clawbox run` commands fire simultaneously, the gateway serializes them — task B waits for task A to finish before starting. There's no warning, no queued-task indicator, and no ETA. Users expecting parallelism get silent delay.
-**Fix options:**
-1. **Document it** — add a "Clawbox is single-session" note to README. Lowest effort, honest.
-2. **Queue indicator** — when a request is received while another is in-flight, print "⏳ Another task is running. Your request will start when it completes." This is a UX fix.
-3. **Reject concurrent requests** — immediately return an error if the session is busy, so users don't silently wait. Let them retry.
-**Recommended:** Option 2 (queue indicator) — safe, no behavior change, informs the user.
+**Fix:** Implemented a PID-based lock file (`~/.clawbox-lock`). When a second `run`/`chat`/`task` is called while one is in-flight, the CLI prints:
+```
+⏳ Another Clawbox task is already running (PID 12345).
+   Your request will be queued and start when the current task completes.
+
+   To check what's running:  clawbox task-status
+   To cancel and run yours:  kill 12345 && clawbox run "..."
+```
+The lock is acquired before calling the gateway and released on exit, interrupt, or termination. Stale locks from crashed processes are auto-cleaned (checks `kill -0 <pid>` liveness).
 
 ---
 
