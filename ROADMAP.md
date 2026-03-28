@@ -40,7 +40,15 @@
 - ✓ Session 1: GET /books endpoint working, project scaffolded (53s)
 - ✗ Session 2: Agent said "The workspace directory doesn't exist" and rebuilt from scratch
 - **Root cause (ISSUE-41):** `seed/AGENTS.md` documented `/home/node/workspace/` as the project workspace — but this directory does not exist. The actual workspace (and where projects should live) is `/home/node/.openclaw/workspace/`. Agent followed the instructions literally, tried to `cd /home/node/workspace`, failed, and assumed fresh state.
-- **Fix applied (2026-03-28):** Updated `seed/AGENTS.md` to clarify there is ONE workspace at `/home/node/.openclaw/workspace/`. Removed all references to `/home/node/workspace/`. Updated T3 test script to use correct path in all `find`/`git` commands. Applied fix to running container. ISSUE-41 open for re-run validation.
+- **Fix applied (2026-03-28):** Updated `seed/AGENTS.md` to clarify there is ONE workspace at `/home/node/.openclaw/workspace/`. Removed all references to `/home/node/workspace/`. Updated T3 test script to use correct path in all `find`/`git` commands. Applied fix to running container.
+
+**Run 5 (2026-03-28) — ISSUE-41 fix validated:**
+- ✓ Session 1: TASK.md created at correct path `/home/node/.openclaw/workspace/bookstore-api-v2/TASK.md` (76s)
+- ✓ Session 2: Agent found and read TASK.md, correctly identified Phase 2 work, continued without rebuilding (247s)
+- ✓ Session 2: TASK.md updated with "Resumed" and "Completed" timestamps — true continuity achieved
+- ✓ All endpoints verified: GET /books, GET /books/1, POST /books, DELETE /books/1 all working
+- ⚠️ Minor: Session 2 agent updated TASK.md header but left "Last Updated" timestamp and success criteria checkboxes stale — cosmetic only
+- **Verdict:** ISSUE-41 confirmed fixed. Multi-session continuity is now reliable end-to-end. ✅
 - **Endpoints after session 2 (despite rebuild):** All working — GET /books ✓, GET /books/1 ✓, POST /books ✓, DELETE /books/1 ✓ (agent completed the full API even though it rebuilt)
 
 ### T4 — Error recovery (2026-03-26, re-run 2026-03-28)
