@@ -22,6 +22,7 @@ GATEWAY_TOKEN="clawbox"
 CONTAINER="clawbox-work"
 TASKS_FILE="$HOME/.clawbox-tasks"
 LOCK_FILE="$HOME/.clawbox-lock"
+TASK_LOG="$HOME/.clawbox-task.log"
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
@@ -444,20 +445,49 @@ cmd_task() {
   local ts
   ts=$(date '+%Y-%m-%d %H:%M:%S')
   echo "$ts | $desc" >> "$TASKS_FILE"
+  # Run in background, redirect output to log file so it doesn't bleed to terminal (ISSUE-36)
   (
     acquire_lock
     trap 'release_lock' EXIT INT TERM
-    OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
-      openclaw agent --agent main -m "$desc"
+    {
+      echo "=== Task started: $ts ==="
+      echo "Description: $desc"
+      echo ""
+      OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
+        openclaw agent --agent main -m "$desc"
+      echo ""
+      echo "=== Task completed: $(date '+%Y-%m-%d %H:%M:%S') ==="
+    } > "$TASK_LOG" 2>&1
     release_lock
   ) &
   echo "Task started. Run 'clawbox task-status' to check progress."
+  echo "Output is being saved to: $TASK_LOG"
 }
 
 cmd_task_status() {
+  # Check if a background task is currently running
+  if [ -f "$LOCK_FILE" ]; then
+    local lock_pid
+    lock_pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
+    if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
+      echo "⏳ Background task is running (PID $lock_pid)"
+      echo "   To cancel: kill $lock_pid"
+      echo ""
+    fi
+  fi
+
+  # Show last background task log (ISSUE-36: agent output redirect)
+  if [ -f "$TASK_LOG" ]; then
+    echo "=== Last background task output (tail -30) ==="
+    tail -30 "$TASK_LOG"
+    echo ""
+    echo "Full log: $TASK_LOG"
+    echo ""
+  fi
+
   if [ -f "$TASKS_FILE" ]; then
-    echo "=== Recorded tasks ==="
-    cat "$TASKS_FILE"
+    echo "=== Task history ($TASKS_FILE) ==="
+    tail -10 "$TASKS_FILE"
     echo ""
   else
     echo "No tasks recorded yet."
@@ -465,7 +495,7 @@ cmd_task_status() {
   fi
 
   echo "=== Active task (TASK.md) ==="
-  docker exec "$CONTAINER" cat /home/node/.openclaw/workspace/TASK.md 2>/dev/null || echo "No active task file found in workspace."
+  docker exec "$CONTAINER" sh -c "find /home/node/.openclaw/workspace -name TASK.md -not -path '*/node_modules/*' 2>/dev/null | head -5 | while read f; do echo \"--- \$f ---\"; cat \"\$f\"; echo; done" 2>/dev/null || echo "No active task file found in workspace."
 }
 
 cmd_ask() {
@@ -538,8 +568,8 @@ Commands:
   run --quiet "msg"  Suppress status banners; print only the agent's response
   run --json "msg"   Output result as JSON {response, elapsed_ms, timestamp, context_files, session}
   ask "question"     Alias for run — supports the same flags
-  task "description" Run a task in the background
-  task-status        Check background task progress
+  task "description" Run a task in the background (output saved to ~/.clawbox-task.log)
+  task-status        Check background task progress + last task output
   cp <src> <dest>    Copy file into container (fixes ownership)
   shell              Open a shell inside the container
   logs-tail          Show last 50 lines of today's gateway log
