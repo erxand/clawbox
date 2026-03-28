@@ -88,7 +88,7 @@ assert_not_busy() {
       echo ""
       echo "   To check progress:        clawbox task-status"
       echo "   To tail live output:      clawbox task-logs"
-      echo "   To cancel and run yours:  kill $lock_pid && clawbox run \"...\""
+      echo "   To cancel and run yours:  clawbox cancel && clawbox run \"...\""
       echo ""
       exit 1
     else
@@ -572,7 +572,7 @@ cmd_task_status() {
     lock_pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
     if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
       echo "⏳ Background task is running (PID $lock_pid)"
-      echo "   To cancel: kill $lock_pid"
+      echo "   To cancel: clawbox cancel"
       echo ""
     fi
   fi
@@ -609,6 +609,71 @@ cmd_task_logs() {
   echo "▶ Tailing $TASK_LOG (Ctrl+C to stop)..."
   echo ""
   tail -f "$TASK_LOG"
+}
+
+cmd_cancel() {
+  # Cancel the currently running background task (ISSUE-40).
+  # Sends SIGTERM to the task PID, waits up to 5s for clean exit, then SIGKILL.
+  # Cleans up the lock file so the next task can run immediately.
+  if [ ! -f "$LOCK_FILE" ]; then
+    echo "No background task is currently running."
+    echo "Check status with: clawbox task-status"
+    exit 0
+  fi
+
+  local lock_pid
+  lock_pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
+
+  if [ -z "$lock_pid" ]; then
+    echo "Lock file exists but contains no PID. Cleaning up..."
+    rm -f "$LOCK_FILE"
+    exit 0
+  fi
+
+  if ! kill -0 "$lock_pid" 2>/dev/null; then
+    echo "Lock file has stale PID $lock_pid (process not running). Cleaning up..."
+    rm -f "$LOCK_FILE"
+    exit 0
+  fi
+
+  echo "▶ Cancelling task (PID $lock_pid)..."
+
+  # Graceful SIGTERM first
+  kill -TERM "$lock_pid" 2>/dev/null || true
+
+  # Wait up to 5 seconds for graceful exit
+  local waited=0
+  while kill -0 "$lock_pid" 2>/dev/null && [ $waited -lt 5 ]; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+
+  # If still alive, force-kill
+  if kill -0 "$lock_pid" 2>/dev/null; then
+    echo "  Process didn't exit after ${waited}s — sending SIGKILL..."
+    kill -KILL "$lock_pid" 2>/dev/null || true
+    sleep 1
+  fi
+
+  # Ensure lock is cleaned up (task EXIT trap may not have run if SIGKILL was needed)
+  if [ -f "$LOCK_FILE" ]; then
+    local remaining_pid
+    remaining_pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
+    if [ "$remaining_pid" = "$lock_pid" ]; then
+      rm -f "$LOCK_FILE"
+    fi
+  fi
+
+  # Append cancellation marker to log
+  if [ -f "$TASK_LOG" ]; then
+    echo "" >> "$TASK_LOG"
+    echo "=== Task cancelled by user: $(date '+%Y-%m-%d %H:%M:%S') ===" >> "$TASK_LOG"
+  fi
+
+  echo "✓ Task cancelled."
+  echo ""
+  echo "  Last output: clawbox task-logs"
+  echo "  Start a new task: clawbox task \"description\""
 }
 
 cmd_ask() {
@@ -687,6 +752,7 @@ Commands:
   task --session <name> "desc"  Background task in a named session
   task-status        Check background task progress + last task output
   task-logs          Live tail of background task output (tail -f ~/.clawbox-task.log)
+  cancel             Cancel the currently running background task
   cp <src> <dest>    Copy file into container (fixes ownership)
   shell              Open a shell inside the container
   logs-tail          Show last 50 lines of today's gateway log
@@ -723,6 +789,7 @@ case "$COMMAND" in
   task)        cmd_task "$@" ;;
   task-status) cmd_task_status "$@" ;;
   task-logs)   cmd_task_logs "$@" ;;
+  cancel)      cmd_cancel "$@" ;;
   cp)          cmd_cp "$@" ;;
   shell)       cmd_shell "$@" ;;
   logs-tail)   cmd_logs_tail "$@" ;;

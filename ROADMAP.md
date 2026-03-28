@@ -129,6 +129,10 @@ The lock is acquired before calling the gateway and released on exit, interrupt,
 **Problem:** Background task mode only accepted a bare description string — no flag support. These are exactly the flags most useful for long-running tasks (which is the entire point of `task`).
 **Fix:** `cmd_task` now supports `--context <path>`, `--thinking <level>`, `--session <name>` with identical logic to `cmd_run`. Context is built and prepended; flags passed to `openclaw agent`. Task log header now includes context file count and session name.
 
+### ISSUE-40: No `clawbox cancel` command ✅ Fixed 2026-03-28
+**Problem:** The only way to cancel a running background task was `kill <pid>` — the raw PID was shown in `task-status` and `assert_not_busy` output, requiring the user to manually read and copy a PID. No cleanup was guaranteed.
+**Fix:** Added `clawbox cancel` command with graceful SIGTERM → SIGKILL fallback (5s window), automatic lock file cleanup, and a cancellation marker appended to `~/.clawbox-task.log`. Updated `task-status` and `assert_not_busy` to show `clawbox cancel` instead of raw `kill <pid>`.
+
 ### ISSUE-39: No `task-logs` command for live monitoring ✅ Fixed 2026-03-28
 **Problem:** After `clawbox task` prints "output saved to ~/.clawbox-task.log", there's no CLI shortcut to live-tail it. Users had to manually run `tail -f ~/.clawbox-task.log`.
 **Fix:** Added `clawbox task-logs` — wraps `tail -f ~/.clawbox-task.log` with a clear header and usage hint if no log exists yet. Also referenced in `assert_not_busy` busy message.
@@ -203,6 +207,16 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - ⚠️ Test scaffold had a missing directory creation step (mkdir -p src/routes) — fixed in T5 script
 - ⚠️ Agent also auto-created IMPLEMENTATION_SUMMARY.md — slight gold-plating but harmless
 - **Verdict:** Strong end-to-end performance. Agent reads code selectively, produces working features, doesn't break existing tests. Ready for harder tasks (ISSUE-5 from Phase 3: real project from GitHub).
+
+### T12 — cancel command (2026-03-28) ✅
+- ✓ 18/18 checks pass
+- ✓ `clawbox cancel` with no running task: informative message, exit 0
+- ✓ `clawbox cancel` with stale lock (dead PID): reports stale, cleans up lock
+- ✓ `clawbox cancel` with live background task: SIGTERM kills process, lock cleaned, cancellation marker appended to log
+- ✓ After cancel, no stale lock — new tasks can run immediately
+- ✓ `cancel` in help with correct description
+- ✓ `task-status` and `assert_not_busy` show `clawbox cancel` hint (not raw `kill <pid>`)
+- **Verdict:** cancel command works end-to-end. UX is now first-class — no raw PIDs exposed to the user. ✅
 
 ### T11 — Background task mode (2026-03-28) ✅
 - ✓ `clawbox task` returns immediately with "Task started" message
