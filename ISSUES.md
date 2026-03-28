@@ -812,3 +812,59 @@ cycles 3, 5, 7 did not. The alternating pattern suggests it's timing-dependent r
 a fundamental change. All cycles: pids_limit=512 contained the bomb. Zero escapes.
 
 **Status:** INFO — no action needed. pids containment working perfectly.
+
+---
+
+## [FIXED] ISSUE-37: `assert_not_busy` warned but did not exit — concurrent tasks ran silently
+
+**Discovered:** 2026-03-28 code review
+**Category:** CLI correctness
+**Severity:** Medium
+
+**Problem:** `assert_not_busy` printed a "your request will be queued" warning when a lock was held,
+but continued execution without exiting. This meant two concurrent `clawbox run`/`task` calls could
+both proceed, with both sending requests to the gateway simultaneously. The warning was misleading
+("will be queued") and the actual behavior (true concurrency) was the opposite of what it said.
+
+**Fix (2026-03-28):**
+- `assert_not_busy` now calls `exit 1` when a live lock is detected
+- Updated warning message: "Wait for it to complete, then retry" (accurate) instead of "will be queued" (inaccurate)
+- Added `clawbox task-logs` to the busy message as the recommended way to monitor active tasks
+
+---
+
+## [FIXED] ISSUE-38: `clawbox task` did not support `--context`, `--thinking`, `--session` flags
+
+**Discovered:** 2026-03-28 code review
+**Category:** CLI feature gap
+**Severity:** Medium
+
+**Problem:** `clawbox task` (background task mode) only accepted a bare description string.
+It did not support `--context`, `--thinking`, or `--session` flags — exactly the flags most
+useful for long-running background tasks (which are the primary use case for `task`). Users
+who needed to attach context or use a named session had to use `run` synchronously instead.
+
+**Fix (2026-03-28):**
+- `cmd_task` now accepts `--context <path>`, `--thinking <level>`, `--session <name>` (same logic as `cmd_run`)
+- Context block is built and prepended to the task description before sending to the agent
+- Background subshell passes `--thinking`/`--session-id` flags to `openclaw agent`
+- Task log header now shows context file count and session name when set
+- Help text updated to document the new flags
+
+---
+
+## [FIXED] ISSUE-39: No `task-logs` command for live monitoring of background tasks
+
+**Discovered:** 2026-03-28 code review
+**Category:** CLI UX
+**Severity:** Low
+
+**Problem:** After `clawbox task` started a background job and said "output saved to ~/.clawbox-task.log",
+there was no convenient CLI shortcut to live-tail that log. Users had to manually run
+`tail -f ~/.clawbox-task.log`. This was a friction point documented in ISSUE-36's fix but not addressed.
+
+**Fix (2026-03-28):**
+- Added `clawbox task-logs` command — wraps `tail -f ~/.clawbox-task.log` with a clear header
+- Shows error + usage hint if no log file exists yet
+- Added to busy message in `assert_not_busy`: "To tail live output: clawbox task-logs"
+- Dispatch table and help text updated

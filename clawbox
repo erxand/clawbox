@@ -75,6 +75,8 @@ assert_container_running() {
 assert_not_busy() {
   # Check if another clawbox request is already in-flight (ISSUE-30).
   # Uses a lock file with PID so stale locks from crashed processes are detected.
+  # Exits 1 if busy — prevents two concurrent requests from silently queuing with
+  # no indication to the user (ISSUE-37: assert_not_busy warned but did not exit).
   if [ -f "$LOCK_FILE" ]; then
     local lock_pid
     lock_pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
@@ -82,11 +84,13 @@ assert_not_busy() {
     if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
       echo ""
       echo "⏳ Another Clawbox task is already running (PID $lock_pid)."
-      echo "   Your request will be queued and start when the current task completes."
+      echo "   Wait for it to complete, then retry."
       echo ""
-      echo "   To check what's running:  clawbox task-status"
+      echo "   To check progress:        clawbox task-status"
+      echo "   To tail live output:      clawbox task-logs"
       echo "   To cancel and run yours:  kill $lock_pid && clawbox run \"...\""
       echo ""
+      exit 1
     else
       # Stale lock — previous process died without cleanup
       rm -f "$LOCK_FILE"
@@ -435,33 +439,130 @@ cmd_cp() {
 }
 
 cmd_task() {
-  if [ -z "${1:-}" ]; then
-    echo "Usage: clawbox task \"description\""
+  # clawbox task [--context <path>] [--thinking <level>] [--session <name>] "description"
+  # Runs a task in the background; supports the same flags as `run`.
+  # --context <path>    Attach file/dir as context (same as run --context)
+  # --thinking <level>  Thinking level: off|minimal|low|medium|high|xhigh
+  # --session <name>    Named session for conversation continuity
+  local context_path=""
+  local thinking_level=""
+  local session_key=""
+  local desc=""
+
+  while [[ $# -gt 0 ]]; do
+    case "${1:-}" in
+      --context|-c)
+        context_path="${2:-}"
+        if [ -z "$context_path" ]; then
+          echo "Usage: clawbox task --context <path> \"description\""
+          exit 1
+        fi
+        shift 2
+        ;;
+      --thinking|-T)
+        thinking_level="${2:-}"
+        if [ -z "$thinking_level" ]; then
+          echo "Usage: clawbox task --thinking <level> \"description\""
+          exit 1
+        fi
+        shift 2
+        ;;
+      --session|-s)
+        session_key="${2:-}"
+        if [ -z "$session_key" ]; then
+          echo "Usage: clawbox task --session <name> \"description\""
+          exit 1
+        fi
+        shift 2
+        ;;
+      *)
+        desc="${1:-}"
+        shift
+        ;;
+    esac
+  done
+
+  if [ -z "$desc" ]; then
+    echo "Usage: clawbox task [--context <path>] [--thinking <level>] [--session <name>] \"description\""
     exit 1
   fi
+
   assert_container_running
   assert_not_busy
-  local desc="$1"
   local ts
   ts=$(date '+%Y-%m-%d %H:%M:%S')
   echo "$ts | $desc" >> "$TASKS_FILE"
+
+  # Build context block if --context given (mirrors cmd_run logic)
+  local context_file_count=0
+  if [ -n "$context_path" ]; then
+    if [ ! -e "$context_path" ]; then
+      echo "Error: --context path not found: $context_path" >&2
+      exit 1
+    fi
+    local ctx_block=""
+    ctx_block="=== Context files from: $context_path ===\n"
+    if [ -f "$context_path" ]; then
+      ctx_block+="--- $(basename "$context_path") ---\n"
+      ctx_block+="$(cat "$context_path")\n"
+      context_file_count=1
+    elif [ -d "$context_path" ]; then
+      local file_count=0
+      local max_files=50
+      local max_bytes=65536
+      while IFS= read -r -d '' file; do
+        [ $file_count -ge $max_files ] && break
+        local fsize
+        fsize=$(wc -c < "$file" 2>/dev/null || echo 0)
+        [ "$fsize" -gt 10240 ] && continue
+        local total_so_far=${#ctx_block}
+        [ $total_so_far -gt $max_bytes ] && break
+        local rel_file="${file#"$context_path/"}"
+        ctx_block+="--- $rel_file ---\n"
+        ctx_block+="$(cat "$file")\n"
+        file_count=$((file_count + 1))
+      done < <(find "$context_path" \
+        -not -path '*/node_modules/*' -not -path '*/.git/*' \
+        -not -path '*/__pycache__/*' -not -path '*/dist/*' -not -path '*/build/*' \
+        -not -name '*.png' -not -name '*.jpg' -not -name '*.jpeg' -not -name '*.gif' \
+        -not -name '*.svg' -not -name '*.ico' \
+        -not -name '*.woff' -not -name '*.woff2' -not -name '*.ttf' \
+        -not -name '*.min.js' -not -name '*.min.css' -not -name '*.map' -not -name '*.lock' \
+        -type f -print0 | sort -z)
+      ctx_block+="=== End of context ($file_count files) ===\n"
+      context_file_count=$file_count
+      echo "▶ Attaching $file_count file(s) from $context_path as context..."
+    fi
+    desc="$(printf '%b' "$ctx_block")\n\n$desc"
+  fi
+
+  # Capture flags for background subshell
+  local agent_args=()
+  [ -n "$thinking_level" ] && agent_args+=(--thinking "$thinking_level")
+  [ -n "$session_key" ]    && agent_args+=(--session-id "$session_key")
+
   # Run in background, redirect output to log file so it doesn't bleed to terminal (ISSUE-36)
   (
     acquire_lock
     trap 'release_lock' EXIT INT TERM
     {
       echo "=== Task started: $ts ==="
-      echo "Description: $desc"
+      echo "Description: ${desc:0:200}"
+      [ $context_file_count -gt 0 ] && echo "Context files: $context_file_count"
+      [ -n "$session_key" ] && echo "Session: $session_key"
       echo ""
       OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
-        openclaw agent --agent main -m "$desc"
+        openclaw agent --agent main ${agent_args[@]+"${agent_args[@]}"} -m "$desc"
       echo ""
       echo "=== Task completed: $(date '+%Y-%m-%d %H:%M:%S') ==="
     } > "$TASK_LOG" 2>&1
     release_lock
   ) &
-  echo "Task started. Run 'clawbox task-status' to check progress."
-  echo "Output is being saved to: $TASK_LOG"
+  echo "▶ Task started in background."
+  [ -n "$session_key" ] && echo "  Session: $session_key"
+  [ $context_file_count -gt 0 ] && echo "  Context: $context_file_count file(s) from $context_path"
+  echo "  Output:  clawbox task-logs   (tail -f the log)"
+  echo "  Status:  clawbox task-status (full status + history)"
 }
 
 cmd_task_status() {
@@ -496,6 +597,18 @@ cmd_task_status() {
 
   echo "=== Active task (TASK.md) ==="
   docker exec "$CONTAINER" sh -c "find /home/node/.openclaw/workspace -name TASK.md -not -path '*/node_modules/*' 2>/dev/null | head -5 | while read f; do echo \"--- \$f ---\"; cat \"\$f\"; echo; done" 2>/dev/null || echo "No active task file found in workspace."
+}
+
+cmd_task_logs() {
+  # Live-tail the background task log (ISSUE-36 follow-up: make live output easy to access)
+  if [ ! -f "$TASK_LOG" ]; then
+    echo "No background task log found at $TASK_LOG"
+    echo "Start a task first: clawbox task \"description\""
+    exit 1
+  fi
+  echo "▶ Tailing $TASK_LOG (Ctrl+C to stop)..."
+  echo ""
+  tail -f "$TASK_LOG"
 }
 
 cmd_ask() {
@@ -569,7 +682,11 @@ Commands:
   run --json "msg"   Output result as JSON {response, elapsed_ms, timestamp, context_files, session}
   ask "question"     Alias for run — supports the same flags
   task "description" Run a task in the background (output saved to ~/.clawbox-task.log)
+  task --context <path> "desc"  Background task with file/dir context
+  task --thinking <level> "desc"  Background task with thinking level
+  task --session <name> "desc"  Background task in a named session
   task-status        Check background task progress + last task output
+  task-logs          Live tail of background task output (tail -f ~/.clawbox-task.log)
   cp <src> <dest>    Copy file into container (fixes ownership)
   shell              Open a shell inside the container
   logs-tail          Show last 50 lines of today's gateway log
@@ -605,6 +722,7 @@ case "$COMMAND" in
   ask)         cmd_ask "$@" ;;
   task)        cmd_task "$@" ;;
   task-status) cmd_task_status "$@" ;;
+  task-logs)   cmd_task_logs "$@" ;;
   cp)          cmd_cp "$@" ;;
   shell)       cmd_shell "$@" ;;
   logs-tail)   cmd_logs_tail "$@" ;;

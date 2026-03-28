@@ -121,6 +121,18 @@ The lock is acquired before calling the gateway and released on exit, interrupt,
 **Problem:** If ports 18790 or 3000 are already bound (e.g. previous container still running), `docker compose up` silently succeeds but with no port bindings. CLI connects to wrong instance.
 **Fix:** `clawbox start` and `setup.sh` both run port conflict detection before starting. Prints which PID holds the port, offers `GATEWAY_PORT=18791 clawbox start` as an alternative.
 
+### ISSUE-37: `assert_not_busy` warned but did not exit ✅ Fixed 2026-03-28
+**Problem:** `assert_not_busy` printed "your request will be queued" when a lock was held but continued execution without calling `exit 1`. Two concurrent `clawbox run`/`task` calls could both proceed simultaneously — the warning was both inaccurate and toothless.
+**Fix:** `assert_not_busy` now calls `exit 1` on live lock. Warning message corrected to "Wait for it to complete, then retry." Added `clawbox task-logs` to the busy output for discoverability.
+
+### ISSUE-38: `clawbox task` missing `--context`/`--thinking`/`--session` flags ✅ Fixed 2026-03-28
+**Problem:** Background task mode only accepted a bare description string — no flag support. These are exactly the flags most useful for long-running tasks (which is the entire point of `task`).
+**Fix:** `cmd_task` now supports `--context <path>`, `--thinking <level>`, `--session <name>` with identical logic to `cmd_run`. Context is built and prepended; flags passed to `openclaw agent`. Task log header now includes context file count and session name.
+
+### ISSUE-39: No `task-logs` command for live monitoring ✅ Fixed 2026-03-28
+**Problem:** After `clawbox task` prints "output saved to ~/.clawbox-task.log", there's no CLI shortcut to live-tail it. Users had to manually run `tail -f ~/.clawbox-task.log`.
+**Fix:** Added `clawbox task-logs` — wraps `tail -f ~/.clawbox-task.log` with a clear header and usage hint if no log exists yet. Also referenced in `assert_not_busy` busy message.
+
 ### ISSUE-36: `clawbox task` agent output bleeds to terminal ✅ Fixed 2026-03-28
 **Problem:** `clawbox task` spawns a background subshell but its stdout was inherited from the terminal. The agent response appeared unsolicited after "Task started." (Found during T11 testing.)
 **Fix:** Background subshell now redirects all output (stdout + stderr) to `~/.clawbox-task.log`. `clawbox task` prints the log path so users know where to look. `clawbox task-status` now shows the last 30 lines of this log, making it easy to see completed task output without noise on the terminal.
