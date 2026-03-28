@@ -51,12 +51,12 @@
 - **Verdict:** ISSUE-41 confirmed fixed. Multi-session continuity is now reliable end-to-end. ✅
 - **Endpoints after session 2 (despite rebuild):** All working — GET /books ✓, GET /books/1 ✓, POST /books ✓, DELETE /books/1 ✓ (agent completed the full API even though it rebuilt)
 
-### T4 — Error recovery (2026-03-26, re-run 2026-03-28)
-- ✓ Agent correctly diagnosed `MODULE_NOT_FOUND` error in 26s (first run), 29s (re-run)
-- ✓ Identified dead `require('nonexistent-package')` and removed it both times
+### T4 — Error recovery (2026-03-26, re-run 2026-03-28, re-run 2026-03-28 #2)
+- ✓ Agent correctly diagnosed `MODULE_NOT_FOUND` error in 26s (first run), 29s (re-run 1), 31s (re-run 2)
+- ✓ Identified dead `require('nonexistent-package')` and removed it all three times
 - ✓ Verified server starts and GET / returns `Hello` (HTTP 200)
-- ✓ Re-run confirms fix still works cleanly after all ISSUE-24/25/30 changes (configurable port, container assertion, lock file)
-- No issues observed — agent performs consistently well on straightforward error recovery
+- ✓ Re-run #2 (2026-03-28 14:40) confirms fix still works cleanly after ISSUE-41 (workspace path) changes
+- No issues observed — agent performs consistently well on straightforward error recovery across all runs
 
 ### T1 — Long-running task (2026-03-27 runs + 2026-03-28 re-run)
 **Run 1 (2026-03-27 08:41):** Agent built full-stack task manager app. TASK.md created, 5 commits made.
