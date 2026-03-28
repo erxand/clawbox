@@ -1,6 +1,6 @@
 # AGENTS.md — Workspace Guide
 
-This folder is the agent's workspace. It persists across sessions via a Docker volume.
+This folder IS your workspace. `/home/node/.openclaw/workspace/` is where everything lives — your config files, memory, AND code projects.
 
 ## Session Startup
 
@@ -10,11 +10,11 @@ Before doing anything else:
 2. Read `USER.md` — who you're helping
 3. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
 4. Read `MEMORY.md` if it exists — long-term curated memory
-5. **Check for active work:** Scan `/home/node/workspace/` for any `TASK.md` files. If found, read them — you may be resuming an in-progress task.
+5. **Check for active work:** Run `find /home/node/.openclaw/workspace -name 'TASK.md' 2>/dev/null` to see if you're resuming an in-progress task. If found, read it.
 
 Don't ask permission. Just do it.
 
-If you find an existing TASK.md, **do not assume a fresh start** — read it and use it as context. You may be continuing work from a previous session.
+If you find an existing TASK.md, **do not assume a fresh start** — read it and use it as context. You are almost certainly continuing work from a previous session.
 
 ## Memory
 
@@ -40,19 +40,21 @@ Memory doesn't survive sessions — files do.
 - `trash` > `rm`
 - When in doubt, ask.
 
-## Workspace Paths
+## Workspace Path
 
-There are TWO workspace directories in this container. Don't confuse them:
+There is ONE workspace: `/home/node/.openclaw/workspace/`
 
-- **Your agent workspace:** `/home/node/.openclaw/workspace/` — SOUL.md, USER.md, memory files, AGENTS.md
-  This is your *default* working directory. File tools (read/write/edit) operate here unless you specify absolute paths.
-- **Project workspace:** `/home/node/workspace/` — code projects, build artifacts, user files
-  Use **absolute paths** to access this directory: `/home/node/workspace/myproject/server.js`
+This is your default working directory. It persists across container restarts via a Docker volume. Everything lives here:
+- Your agent config: `SOUL.md`, `USER.md`, `AGENTS.md`, `MEMORY.md`, `memory/`
+- Your code projects: `my-app/`, `bookstore-api/`, etc.
 
-When building apps or working with user code, **always use `/home/node/workspace/` with explicit absolute paths**.
-Relative paths like `./myproject/` will resolve against your agent workspace, NOT the project workspace.
+**Put projects inside this directory.** Example:
+- `/home/node/.openclaw/workspace/bookstore-api/server.js`
+- `/home/node/.openclaw/workspace/my-react-app/package.json`
 
-**Shell commands** (exec tool) default to your agent workspace. Use `workdir` parameter or `cd /home/node/workspace` to work in project space.
+There is **no separate** `/home/node/workspace/` directory. Do not reference it.
+
+Shell commands run with `/home/node/.openclaw/workspace/` as the working directory by default.
 
 ## Alpine Linux Note
 
@@ -68,7 +70,7 @@ For any task that involves building, modifying, or continuing a project — even
 
 ### Starting a task
 
-Create `TASK.md` **inside your project directory** (e.g. `/home/node/workspace/bookstore-api/TASK.md`) with this structure:
+Create `TASK.md` **inside your project directory** (e.g. `/home/node/.openclaw/workspace/bookstore-api/TASK.md`) with this structure:
 
 ```markdown
 # Task: <short description>
@@ -76,7 +78,7 @@ Create `TASK.md` **inside your project directory** (e.g. `/home/node/workspace/b
 **Goal:** <what you're trying to achieve>
 
 ## Steps
-<!-- After completing EACH step, run: git -C /home/node/workspace add -A && git -C /home/node/workspace commit -m "progress: <step name>" -->
+<!-- After completing EACH step, run: git -C /home/node/.openclaw/workspace add -A && git -C /home/node/.openclaw/workspace commit -m "progress: <step name>" -->
 1. [ ] Step one
 2. [ ] Step two
 3. [ ] ...
@@ -98,9 +100,9 @@ Create `TASK.md` **inside your project directory** (e.g. `/home/node/workspace/b
 - **REQUIRED: After each major step, commit your progress.** This is not optional — commits
   are what allow the task to be resumed if something goes wrong mid-way. Do not skip this.
   ```sh
-  git -C /home/node/workspace init 2>/dev/null || true
-  git -C /home/node/workspace add -A
-  git -C /home/node/workspace commit -m "progress: <what was just done>"
+  git -C /home/node/.openclaw/workspace init 2>/dev/null || true
+  git -C /home/node/.openclaw/workspace add -A
+  git -C /home/node/.openclaw/workspace commit -m "progress: <what was just done>"
   ```
   Then update the "Git Log" section in TASK.md with the commit hash and message.
 
@@ -124,9 +126,9 @@ This is critical: the next session's agent will have no memory. A good TASK.md i
 
 When done:
 ```sh
-mkdir -p /home/node/workspace/tasks
-mv /home/node/workspace/TASK.md "/home/node/workspace/tasks/$(date +%Y-%m-%d-%H-%M)-<slug>.md"
-git -C /home/node/workspace add -A && git -C /home/node/workspace commit -m "task complete: <description>"
+mkdir -p /home/node/.openclaw/workspace/tasks
+mv /home/node/.openclaw/workspace/TASK.md "/home/node/.openclaw/workspace/tasks/$(date +%Y-%m-%d-%H-%M)-<slug>.md"
+git -C /home/node/.openclaw/workspace add -A && git -C /home/node/.openclaw/workspace commit -m "task complete: <description>"
 ```
 
 This lets you (and the human) see what happened, resume interrupted work, and learn from past tasks.

@@ -21,7 +21,7 @@
 - **Verdict:** With explicit hint, agent produced a more architecturally correct solution (wrapper vs. monkey-patch). Without the hint (Run 1), it takes the path of least resistance (edit the vendored dep directly). This is a useful finding: agent behavior is highly prompt-sensitive for architectural choices. The hint in Run 2 is realistic (any senior dev would say "don't edit node_modules"), so Run 2 is the target behavior.
 - **Fix applied (2026-03-28):** T2 script now checks both `lib/router/` and `node_modules/router/` for stats() presence, reporting which one was modified for easy comparison across runs.
 
-### T3 — Multi-session continuity (2026-03-26, re-run 2026-03-27, re-run 2026-03-27 #2)
+### T3 — Multi-session continuity (2026-03-26, re-run 2026-03-27, re-run 2026-03-27 #2, re-run 2026-03-28)
 - ✓ Agent completed the task both sessions (bookstore API with all endpoints working)
 - ✓ GET /books, GET /books/1, POST /books, DELETE /books/1 all return correct responses
 - ✓ Session 2 agent reconstructed the full API in a fresh container start (state persisted via volume)
@@ -34,6 +34,14 @@
   - ✓ Session 2 continued correctly — TASK.md shows session 2 work layered on session 1
   - ⚠️ Session 2 still says "workspace was reset" but this is misleading — agent actually DID read TASK.md and continued properly (GET /books shown as done, new endpoints added correctly)
   - **Verdict:** Continuity now working. "Workspace was reset" phrasing is benign/cosmetic — agent behavior is correct. ISSUE-32 closed.
+
+**Run 4 (2026-03-28) — ISSUE-41 discovered:**
+- ✓ Session 1: Agent created TASK.md in `/home/node/.openclaw/workspace/bookstore-api/TASK.md` (correct location)
+- ✓ Session 1: GET /books endpoint working, project scaffolded (53s)
+- ✗ Session 2: Agent said "The workspace directory doesn't exist" and rebuilt from scratch
+- **Root cause (ISSUE-41):** `seed/AGENTS.md` documented `/home/node/workspace/` as the project workspace — but this directory does not exist. The actual workspace (and where projects should live) is `/home/node/.openclaw/workspace/`. Agent followed the instructions literally, tried to `cd /home/node/workspace`, failed, and assumed fresh state.
+- **Fix applied (2026-03-28):** Updated `seed/AGENTS.md` to clarify there is ONE workspace at `/home/node/.openclaw/workspace/`. Removed all references to `/home/node/workspace/`. Updated T3 test script to use correct path in all `find`/`git` commands. Applied fix to running container. ISSUE-41 open for re-run validation.
+- **Endpoints after session 2 (despite rebuild):** All working — GET /books ✓, GET /books/1 ✓, POST /books ✓, DELETE /books/1 ✓ (agent completed the full API even though it rebuilt)
 
 ### T4 — Error recovery (2026-03-26, re-run 2026-03-28)
 - ✓ Agent correctly diagnosed `MODULE_NOT_FOUND` error in 26s (first run), 29s (re-run)
@@ -124,6 +132,10 @@ The lock is acquired before calling the gateway and released on exit, interrupt,
 ### ISSUE-37: `assert_not_busy` warned but did not exit ✅ Fixed 2026-03-28
 **Problem:** `assert_not_busy` printed "your request will be queued" when a lock was held but continued execution without calling `exit 1`. Two concurrent `clawbox run`/`task` calls could both proceed simultaneously — the warning was both inaccurate and toothless.
 **Fix:** `assert_not_busy` now calls `exit 1` on live lock. Warning message corrected to "Wait for it to complete, then retry." Added `clawbox task-logs` to the busy output for discoverability.
+
+### ISSUE-41: AGENTS.md referenced non-existent `/home/node/workspace/` ✅ Fixed 2026-03-28
+**Problem:** `seed/AGENTS.md` told the agent that code projects should live at `/home/node/workspace/` — but this directory does not exist. The actual workspace is `/home/node/.openclaw/workspace/`. When session 2 tried to continue a task, it ran `cd /home/node/workspace`, got a "no such directory" error, assumed fresh state, and rebuilt from scratch. This silently broke all T3 continuity tests after the seed/AGENTS.md was in place.
+**Fix:** Updated `seed/AGENTS.md` to document ONE workspace at `/home/node/.openclaw/workspace/`. Removed all references to `/home/node/workspace/`. All git commands, TASK.md examples, and path guidance updated. T3 test script updated to search `/home/node/.openclaw/workspace` instead of the non-existent `/home/node/workspace`. Fix applied to running container.
 
 ### ISSUE-38: `clawbox task` missing `--context`/`--thinking`/`--session` flags ✅ Fixed 2026-03-28
 **Problem:** Background task mode only accepted a bare description string — no flag support. These are exactly the flags most useful for long-running tasks (which is the entire point of `task`).

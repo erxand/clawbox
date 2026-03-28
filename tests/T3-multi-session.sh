@@ -35,8 +35,9 @@ wait_for_agent() {
   while [ $elapsed -lt $max_wait ]; do
     sleep 10
     elapsed=$((elapsed + 10))
-    # Check if TASK.md exists anywhere in project workspace (agent may create it in a subdir)
-    FOUND=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -name 'TASK.md' 2>/dev/null | head -1")
+    # Check if TASK.md exists anywhere in workspace (agent may create it in a subdir)
+    # Workspace is /home/node/.openclaw/workspace/ (not /home/node/workspace/)
+    FOUND=$(docker exec "$CONTAINER" sh -c "find /home/node/.openclaw/workspace -name 'TASK.md' 2>/dev/null | head -1")
     [ -n "$FOUND" ] && break
   done
   # Give extra time for the agent to finish after TASK.md appears
@@ -63,11 +64,12 @@ SESSION1_END=$(date +%s)
 SESSION1_TIME=$((SESSION1_END - SESSION1_START))
 log "Session 1 completed in ${SESSION1_TIME}s"
 
-# Capture session 1 state (project workspace — search for TASK.md anywhere in workspace)
-S1_TASK_MD=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -name 'TASK.md' 2>/dev/null | head -1 | xargs cat 2>/dev/null" || echo "(not found)")
-S1_TASK_MD_PATH=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -name 'TASK.md' 2>/dev/null | head -1" || echo "(not found)")
-S1_FILES=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -type f \( -name '*.js' -o -name '*.json' \) 2>/dev/null | grep -v node_modules | head -20" || echo "(none)")
-S1_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd /home/node/workspace && git log --oneline 2>/dev/null" || echo "(no git repo)")
+# Capture session 1 state (workspace is /home/node/.openclaw/workspace/)
+WORKSPACE="/home/node/.openclaw/workspace"
+S1_TASK_MD=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -name 'TASK.md' 2>/dev/null | grep -v '/.git/' | head -1 | xargs cat 2>/dev/null" || echo "(not found)")
+S1_TASK_MD_PATH=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -name 'TASK.md' 2>/dev/null | grep -v '/.git/' | head -1" || echo "(not found)")
+S1_FILES=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -type f \( -name '*.js' -o -name '*.json' \) 2>/dev/null | grep -v node_modules | grep -v '/.git/' | grep -v AGENTS.md | grep -v SOUL.md | head -20" || echo "(none)")
+S1_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd $WORKSPACE && git log --oneline 2>/dev/null" || echo "(no git repo)")
 
 log "Session 1 state captured. Stopping container..."
 
@@ -109,11 +111,11 @@ DELETE_BOOK=$(docker exec "$CONTAINER" sh -c "curl -s -X DELETE http://localhost
 # Also try port 3001 in case agent used that
 GET_BOOKS_ALT=$(docker exec "$CONTAINER" sh -c "curl -s http://localhost:3001/books 2>/dev/null" || echo "FAIL")
 
-# Final state (project workspace — search for TASK.md anywhere in workspace)
-S2_TASK_MD=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -name 'TASK.md' 2>/dev/null | head -1 | xargs cat 2>/dev/null" || echo "(not found)")
-S2_TASK_MD_PATH=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -name 'TASK.md' 2>/dev/null | head -1" || echo "(not found)")
-S2_FILES=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -type f \( -name '*.js' -o -name '*.json' \) 2>/dev/null | grep -v node_modules | head -20" || echo "(none)")
-S2_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd /home/node/workspace && git log --oneline 2>/dev/null" || echo "(no git repo)")
+# Final state
+S2_TASK_MD=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -name 'TASK.md' 2>/dev/null | grep -v '/.git/' | head -1 | xargs cat 2>/dev/null" || echo "(not found)")
+S2_TASK_MD_PATH=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -name 'TASK.md' 2>/dev/null | grep -v '/.git/' | head -1" || echo "(not found)")
+S2_FILES=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -type f \( -name '*.js' -o -name '*.json' \) 2>/dev/null | grep -v node_modules | grep -v '/.git/' | grep -v AGENTS.md | head -20" || echo "(none)")
+S2_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd $WORKSPACE && git log --oneline 2>/dev/null" || echo "(no git repo)")
 
 # ── Write results ──────────────────────────────────────────────────
 
