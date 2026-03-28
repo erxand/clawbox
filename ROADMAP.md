@@ -2,13 +2,24 @@
 
 ## Test Results
 
-### T2 — Context window stress (2026-03-26)
+### T2 — Context window stress (2026-03-26, re-run 2026-03-28)
+
+**Run 1 (2026-03-26):**
 - ✓ Agent navigated 141-file Express.js codebase selectively (no context overload)
 - ✓ Added `router.stats()` method and wrote 7 passing tests — all green
 - ✓ Completed in 196s (~3 min), no timeout
 - ⚠️ Agent modified `node_modules/router/index.js` instead of Express's own `lib/router/index.js` — found the vendored dependency, not the actual source file. Task succeeded but in a slightly wrong location.
 - ⚠️ `ROUTER_STATS_SUMMARY.md` auto-created but not explicitly asked for — agent gold-plates a bit
-- **Verdict:** Strong performance overall. The wrong-file issue is worth noting as a codebase navigation quirk — agent doesn't always distinguish source from vendored deps.
+
+**Run 2 (2026-03-28) — hint-guided re-run:**
+- Task message updated to explicitly say "look in lib/, not node_modules/"
+- ✓ Agent correctly recognized Express 5.x doesn't have its own `lib/router/` — it delegates to the `router` package
+- ✓ **Created a new wrapper** `lib/router/index.js` that extends the vendored router with the `stats()` method
+- ✓ Updated `lib/express.js` and `lib/application.js` to use the new wrapper — proper layering
+- ✓ 5/5 tests passing, completed in 212s (~3.5 min)
+- ✓ node_modules/router/ NOT modified — correct separation of Express source vs. vendored dep
+- **Verdict:** With explicit hint, agent produced a more architecturally correct solution (wrapper vs. monkey-patch). Without the hint (Run 1), it takes the path of least resistance (edit the vendored dep directly). This is a useful finding: agent behavior is highly prompt-sensitive for architectural choices. The hint in Run 2 is realistic (any senior dev would say "don't edit node_modules"), so Run 2 is the target behavior.
+- **Fix applied (2026-03-28):** T2 script now checks both `lib/router/` and `node_modules/router/` for stats() presence, reporting which one was modified for easy comparison across runs.
 
 ### T3 — Multi-session continuity (2026-03-26, re-run 2026-03-27, re-run 2026-03-27 #2)
 - ✓ Agent completed the task both sessions (bookstore API with all endpoints working)

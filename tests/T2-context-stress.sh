@@ -52,7 +52,7 @@ log "Codebase has $FILE_COUNT JS files"
 
 # ── Send task ───────────────────────────────────────────────────────
 
-TASK_MSG="I've cloned the Express.js framework source code into ~/express-oss in your workspace. WITHOUT reading every file, figure out: (1) Where are the core routing files? (2) What does the Router class look like? (3) Add a \`router.stats()\` method that returns an object with the count of registered routes. Add it to the relevant Router class, write a test for it in a new file called test-router-stats.js, and run that test. Only read files you need — be selective."
+TASK_MSG="I've cloned the Express.js framework source code into ~/express-oss in your workspace. WITHOUT reading every file, figure out: (1) Where are the core routing files in the Express source (hint: look in lib/, not node_modules/)? (2) What does Express's own Router class look like? (3) Add a \`router.stats()\` method to Express's own Router class (in lib/router/, NOT in node_modules/router/ which is a vendored dependency). The method should return an object with the count of registered routes. Write a test for it in a new file called test-router-stats.js, and run that test. Only read files you need — be selective."
 
 log "Sending context-stress task..."
 START_TIME=$(date +%s)
@@ -89,11 +89,18 @@ TEST_FILE_EXISTS=$(docker exec "$CONTAINER" sh -c "test -f $WORKSPACE/test-route
 # Did it create the file in the express-oss dir instead?
 TEST_FILE_ALT=$(docker exec "$CONTAINER" sh -c "test -f $WORKSPACE/express-oss/test-router-stats.js && echo yes || echo no" 2>/dev/null || echo "no")
 
-# Did it modify the router source?
-ROUTER_MODIFIED=$(docker exec "$CONTAINER" sh -c "grep -r 'router.stats\|stats()' $WORKSPACE/express-oss/lib/ 2>/dev/null && echo yes || echo no")
+# Find test file anywhere in workspace
+TEST_FILE_LOCATION=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -name 'test-router-stats.js' 2>/dev/null | head -3" 2>/dev/null || echo "")
+
+# KEY CHECK: Was stats() added to the CORRECT file (Express lib/router) or vendored dep (node_modules/router)?
+STATS_IN_LIB=$(docker exec "$CONTAINER" sh -c "grep -l 'stats' $WORKSPACE/express-oss/lib/router/*.js 2>/dev/null || echo ''" 2>/dev/null | tr '\n' ' ')
+STATS_IN_NODE_MODULES=$(docker exec "$CONTAINER" sh -c "grep -l 'stats' $WORKSPACE/express-oss/node_modules/router/*.js 2>/dev/null || echo ''" 2>/dev/null | tr '\n' ' ')
+# Also check for .stats method (more precise)
+STATS_METHOD_IN_LIB=$(docker exec "$CONTAINER" sh -c "grep -rc '\.stats\s*=\|prototype\.stats' $WORKSPACE/express-oss/lib/ 2>/dev/null | grep -v ':0' | head -5 || echo ''" 2>/dev/null)
+STATS_METHOD_IN_MODULES=$(docker exec "$CONTAINER" sh -c "grep -rc '\.stats\s*=\|prototype\.stats' $WORKSPACE/express-oss/node_modules/ 2>/dev/null | grep -v ':0' | head -5 || echo ''" 2>/dev/null)
 
 # Did it run the test? (look for test pass/fail in agent output)
-AGENT_OUTPUT=$(cat /tmp/t2-output.txt 2>/dev/null | tail -50)
+AGENT_OUTPUT=$(cat /tmp/t2-output.txt 2>/dev/null | tail -60)
 TEST_PASSED=$(echo "$AGENT_OUTPUT" | grep -ci "pass\|✓\|success\|ok" || true)
 TEST_FAILED=$(echo "$AGENT_OUTPUT" | grep -ci "fail\|error\|✗" || true)
 
@@ -122,16 +129,21 @@ Agent was given the Express.js source (~$FILE_COUNT JS files) and asked to:
 |--------|-------|
 | Duration | ${ELAPSED}s |
 | Timed out | $TIMED_OUT |
-| test-router-stats.js created (workspace) | $TEST_FILE_EXISTS |
+| test-router-stats.js created (workspace root) | $TEST_FILE_EXISTS |
 | test-router-stats.js created (express-oss/) | $TEST_FILE_ALT |
-| Router source modified | $ROUTER_MODIFIED |
+| test-router-stats.js path(s) | $TEST_FILE_LOCATION |
+| stats() added to lib/router/ (CORRECT) | ${STATS_IN_LIB:-none} |
+| stats() added to node_modules/router/ (WRONG) | ${STATS_IN_NODE_MODULES:-none} |
+| stats method in lib/ (precise check) | ${STATS_METHOD_IN_LIB:-none} |
+| stats method in node_modules/ (precise) | ${STATS_METHOD_IN_MODULES:-none} |
 | Keyword hits (pass/success) in output | $TEST_PASSED |
 | Keyword hits (fail/error) in output | $TEST_FAILED |
 | Approx read_file calls (recent log) | $GATEWAY_LOG |
 
 ## Assessment
-$([ "$TEST_FILE_EXISTS" = "yes" ] || [ "$TEST_FILE_ALT" = "yes" ] && echo "✓ Test file created" || echo "✗ Test file NOT created")
-$([ -n "$ROUTER_MODIFIED" ] && echo "✓ Router source was modified" || echo "✗ Router source does not appear modified")
+$([ "$TEST_FILE_EXISTS" = "yes" ] || [ "$TEST_FILE_ALT" = "yes" ] || [ -n "$TEST_FILE_LOCATION" ] && echo "✓ Test file created" || echo "✗ Test file NOT created")
+$([ -n "$STATS_METHOD_IN_LIB" ] && echo "✓ stats() added to CORRECT file (Express lib/router/)" || echo "⚠ stats() NOT found in Express lib/router/ (check node_modules)")
+$([ -n "$STATS_METHOD_IN_MODULES" ] && echo "⚠ stats() found in node_modules/router/ (WRONG FILE — vendored dep, not Express source)" || echo "✓ node_modules/router/ not modified (correct)")
 $([ "$TIMED_OUT" = "no" ] && echo "✓ Completed within timeout" || echo "✗ Timed out — agent may have gotten stuck reading too many files")
 
 ## Agent output (tail)
