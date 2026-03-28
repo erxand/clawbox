@@ -64,6 +64,11 @@ while [ $(($(date +%s) - START_TIME)) -lt $TIMEOUT_SECONDS ]; do
       log "Progress: $CURRENT_STEP"
       LAST_STEP="$CURRENT_STEP"
     fi
+    # Early exit if task is complete — no need to wait the full timeout
+    if echo "$TASK_CONTENT" | grep -qiE '(COMPLETE|All objectives achieved|task.*complete)'; then
+      log "Task marked COMPLETE — exiting poll loop early."
+      break
+    fi
   fi
 
   # Check git commits (project workspace)
@@ -93,8 +98,11 @@ check_port_smart() {
   for path in $paths; do
     local code
     code=$(docker exec "$CONTAINER" sh -c "curl -s -o /dev/null -w '%{http_code}' http://localhost:${port}${path} 2>/dev/null" 2>/dev/null || echo "000")
+    # Normalize: curl sometimes returns 000000 (6 digits) for connection refused — treat as 000
+    code=$(echo "$code" | sed 's/^0*\([0-9]\)/\1/' | grep -oE '^[0-9]+' | head -1 || echo "0")
+    [ -z "$code" ] && code="0"
     # 200 or 401 or 302 all mean "server is running" (401 = auth required, 302 = redirect)
-    if [ "$code" != "000" ] && [ "$code" != "404" ]; then
+    if [ "$code" != "0" ] && [ "$code" != "404" ]; then
       best_code="$code"
       best_path="$path"
       break
@@ -117,10 +125,10 @@ PATH_3000=$(echo "$PORT_3000_RESULT" | cut -d: -f2)
 PATH_3001=$(echo "$PORT_3001_RESULT" | cut -d: -f2)
 PATH_8080=$(echo "$PORT_8080_RESULT" | cut -d: -f2)
 
-# Check if any port has a running HTTP server (any non-000 code = server is up)
+# Check if any port has a running HTTP server (any non-0 code = server is up)
 SERVER_ALIVE="no"
 for code in $CURL_3000 $CURL_3001 $CURL_8080; do
-  [ "$code" != "000" ] && SERVER_ALIVE="yes" && break
+  [ "$code" != "0" ] && SERVER_ALIVE="yes" && break
 done
 
 # Count running Node.js processes serving HTTP (more reliable than port check)
@@ -195,9 +203,9 @@ $([ "$TASK_MD_FOUND" = "yes" ] && echo "✓ Agent used TASK.md for progress trac
 $([ "$GIT_COMMITS" -gt 0 ] 2>/dev/null && echo "✓ Agent made $GIT_COMMITS git commits" || echo "✗ Agent made no git commits")
 $([ "$TESTS_PASSING" = "yes" ] && echo "✓ Tests passing" || echo "⚠ Tests status: $TESTS_PASSING")
 $([ "$SERVER_ALIVE" = "yes" ] && echo "✓ HTTP server responding on at least one port" || echo "✗ No HTTP server detected on ports 3000/3001/8080")
-$([ "$CURL_3000" != "000" ] && echo "✓ Port 3000: HTTP $CURL_3000 (path: $PATH_3000)" || echo "⚠ Port 3000: no response (server may have stopped after test run)")
-$([ "$CURL_3001" != "000" ] && echo "✓ Port 3001: HTTP $CURL_3001 (path: $PATH_3001)" || echo "⚠ Port 3001: no response")
-$([ "$CURL_8080" != "000" ] && echo "✓ Port 8080: HTTP $CURL_8080 (path: $PATH_8080)" || echo "⚠ Port 8080: no response")
+$([ "$CURL_3000" != "0" ] && echo "✓ Port 3000: HTTP $CURL_3000 (path: $PATH_3000)" || echo "⚠ Port 3000: no response (server may have stopped after test run)")
+$([ "$CURL_3001" != "0" ] && echo "✓ Port 3001: HTTP $CURL_3001 (path: $PATH_3001)" || echo "⚠ Port 3001: no response")
+$([ "$CURL_8080" != "0" ] && echo "✓ Port 8080: HTTP $CURL_8080 (path: $PATH_8080)" || echo "⚠ Port 8080: no response")
 $([ "$NODE_SERVERS" -gt 0 ] 2>/dev/null && echo "✓ Node.js process(es) running ($NODE_SERVERS found)" || echo "⚠ No Node.js processes detected")
 
 ### Notes on endpoint detection

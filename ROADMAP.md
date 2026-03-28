@@ -31,7 +31,7 @@
 - ✓ Re-run confirms fix still works cleanly after all ISSUE-24/25/30 changes (configurable port, container assertion, lock file)
 - No issues observed — agent performs consistently well on straightforward error recovery
 
-### T1 — Long-running task (2026-03-27 runs)
+### T1 — Long-running task (2026-03-27 runs + 2026-03-28 re-run)
 **Run 1 (2026-03-27 08:41):** Agent built full-stack task manager app. TASK.md created, 5 commits made.
 - Result file reported "Frontend not reachable (HTTP 404)" and "API not reachable (HTTP 000)" → **FALSE NEGATIVES**
 - Root cause: test checked only `localhost:3000/` (root), which returns 404 for API servers. Frontend was at 8080, not checked.
@@ -45,7 +45,15 @@
 - Explicit `npm test` run inside container for definitive pass/fail — most reliable signal
 - `SERVER_ALIVE` flag now set correctly when any port has a responding server
 
-**Verified against live container:** port 3000 → 401 at `/api/tasks` (auth gating works), port 8080 → 200 (frontend), 41/41 tests passing. ✅ ISSUE-35 Fixed 2026-03-27
+**Run 3 (2026-03-28 00:41) — ISSUE-35 validated:** All-green result.
+- ✓ Port 3000: HTTP 401 at `/api/tasks` (auth working correctly)
+- ✓ Port 8080: HTTP 200 (frontend serving)
+- ✓ 41/41 tests passing
+- ✓ TASK.md used, 5 git commits, completed in ~5 min (test waits 20 min)
+- ⚠️ Two minor issues found and fixed:
+  1. **curl returns 6-digit codes** (`000000` not `000`) for connection refused — comparison `!= "000"` was always true, making dead ports show `✓`. Fixed: normalize curl output, use `0` as "no response" sentinel.
+  2. **Test polls for full 20 min** even when TASK.md says COMPLETE. Fixed: early exit from poll loop when TASK.md contains "COMPLETE".
+- **Verdict:** T1 is now reliable. ISSUE-35 confirmed fixed. ✅
 
 ---
 
