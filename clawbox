@@ -209,11 +209,14 @@ cmd_chat() {
 }
 
 cmd_run() {
-  # clawbox run [--context <path>] [--thinking <level>] "your message"
-  # --context <path>  Attach file(s) as context (file or directory)
+  # clawbox run [--context <path>] [--thinking <level>] [--quiet] [--json] "your message"
+  # --context <path>    Attach file(s) as context (file or directory)
   # --thinking <level>  Thinking level: off|minimal|low|medium|high|xhigh
+  # --quiet             Suppress status banners; only print the agent's response
+  # --json              Output result as JSON: {response, elapsed_ms, timestamp, context_files}
   local context_path=""
   local thinking_level=""
+  local output_mode="normal"  # normal | quiet | json
   local message=""
 
   while [[ $# -gt 0 ]]; do
@@ -234,6 +237,14 @@ cmd_run() {
         fi
         shift 2
         ;;
+      --quiet|-q)
+        output_mode="quiet"
+        shift
+        ;;
+      --json|-j)
+        output_mode="json"
+        shift
+        ;;
       *)
         message="${1:-}"
         shift
@@ -242,14 +253,25 @@ cmd_run() {
   done
 
   if [ -z "$message" ]; then
-    echo "Usage: clawbox run [--context <path>] [--thinking <level>] \"your message\""
+    echo "Usage: clawbox run [--context <path>] [--thinking <level>] [--quiet|--json] \"your message\""
     exit 1
   fi
+
+  # Helper: print status banner only when not in quiet/json mode
+  _banner() {
+    if [ "$output_mode" = "normal" ]; then
+      echo "$@"
+    elif [ "$output_mode" = "quiet" ] || [ "$output_mode" = "json" ]; then
+      echo "$@" >&2
+    fi
+  }
+
+  local context_file_count=0
 
   # Build context block if --context was given
   if [ -n "$context_path" ]; then
     if [ ! -e "$context_path" ]; then
-      echo "Error: --context path not found: $context_path"
+      echo "Error: --context path not found: $context_path" >&2
       exit 1
     fi
 
@@ -262,6 +284,7 @@ cmd_run() {
       rel_path=$(basename "$context_path")
       ctx_block+="--- $rel_path ---\n"
       ctx_block+="$(cat "$context_path")\n"
+      context_file_count=1
     elif [ -d "$context_path" ]; then
       # Directory — include all non-binary files (skip node_modules, .git, images, etc.)
       local file_count=0
@@ -296,7 +319,8 @@ cmd_run() {
         -type f -print0 | sort -z)
 
       ctx_block+="=== End of context ($file_count files) ===\n"
-      echo "▶ Attaching $file_count file(s) from $context_path as context..."
+      context_file_count=$file_count
+      _banner "▶ Attaching $file_count file(s) from $context_path as context..."
     fi
 
     # Prepend context to message
@@ -311,9 +335,41 @@ cmd_run() {
   local agent_args=()
   [ -n "$thinking_level" ] && agent_args+=(--thinking "$thinking_level")
 
-  OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
-    openclaw agent --agent main ${agent_args[@]+"${agent_args[@]}"} -m "$message"
+  # Use python3 for millisecond timestamps (macOS BSD date doesn't support %N)
+  local run_start
+  run_start=$(python3 -c "import time; print(int(time.time() * 1000))")
+
+  local response
+  response=$(OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
+    openclaw agent --agent main ${agent_args[@]+"${agent_args[@]}"} -m "$message")
+
+  local run_end
+  run_end=$(python3 -c "import time; print(int(time.time() * 1000))")
+  local elapsed_ms=$(( run_end - run_start ))
+
   release_lock
+
+  case "$output_mode" in
+    normal|quiet)
+      printf '%s\n' "$response"
+      ;;
+    json)
+      # Emit compact JSON: {response, elapsed_ms, timestamp, context_files}
+      # Use python3 for proper JSON escaping (jq not always available)
+      local ts
+      ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      python3 -c "
+import json, sys
+data = {
+    'response': sys.argv[1],
+    'elapsed_ms': int(sys.argv[2]),
+    'timestamp': sys.argv[3],
+    'context_files': int(sys.argv[4]),
+}
+print(json.dumps(data))
+" "$response" "$elapsed_ms" "$ts" "$context_file_count"
+      ;;
+  esac
 }
 
 cmd_shell() {
@@ -433,7 +489,9 @@ Commands:
   run "message"      Send a one-shot message to the agent
   run --context <path> "msg"  Inject file/dir as context before the message
   run --thinking <level> "msg"  Set thinking level (off|minimal|low|medium|high|xhigh)
-  ask "question"     Alias for run — send a question to the agent
+  run --quiet "msg"  Suppress status banners; print only the agent's response
+  run --json "msg"   Output result as JSON {response, elapsed_ms, timestamp, context_files}
+  ask "question"     Alias for run — supports the same flags
   task "description" Run a task in the background
   task-status        Check background task progress
   cp <src> <dest>    Copy file into container (fixes ownership)

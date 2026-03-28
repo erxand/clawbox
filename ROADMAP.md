@@ -133,7 +133,7 @@ Current interaction: `clawbox run "message"` or `clawbox chat` (TUI). Both are f
 - **Persistent task mode:** `clawbox task "build X"` — agent works on it in the background, you can check status with `clawbox status`, get a summary when done
 - **Context injection:** `clawbox run --context ./src/ "refactor the auth module"` — auto-attaches files as context ✅ **Implemented (2026-03-27)** — `--context <file|dir>` prepends file contents to the message (skips node_modules, .git, binaries, files >10KB; caps at 50 files / 64KB). Also added `--thinking <level>` flag to `run`/`ask`.
 - **Session naming:** `clawbox chat --session myproject` — named sessions so you can have separate conversation threads per project
-- **Output modes:** `--json` for scripting, `--quiet` for just the final answer, `--verbose` for full tool trace
+- **Output modes:** `--json` for scripting, `--quiet` for just the final answer, `--verbose` for full tool trace ✅ **Implemented (2026-03-27)** — `--quiet`/`-q` sends banners to stderr, response-only on stdout; `--json`/`-j` emits `{response, elapsed_ms, timestamp, context_files}` as valid JSON. Both work with `--context`. T9 test: 18/18 pass.
 
 ---
 
