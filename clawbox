@@ -198,24 +198,56 @@ cmd_logs() {
 }
 
 cmd_chat() {
+  # clawbox chat [--session <name>]
+  # --session <name>   Named session key for conversation continuity
+  local session_key=""
+
+  while [[ $# -gt 0 ]]; do
+    case "${1:-}" in
+      --session|-s)
+        session_key="${2:-}"
+        if [ -z "$session_key" ]; then
+          echo "Usage: clawbox chat --session <name>"
+          exit 1
+        fi
+        shift 2
+        ;;
+      *)
+        echo "Unknown option: ${1:-}"
+        echo "Usage: clawbox chat [--session <name>]"
+        exit 1
+        ;;
+    esac
+  done
+
   assert_container_running
   assert_not_busy
-  echo "▶ Opening Clawbox chat (Ctrl+C to exit)..."
+
+  if [ -n "$session_key" ]; then
+    echo "▶ Opening Clawbox chat (session: $session_key, Ctrl+C to exit)..."
+  else
+    echo "▶ Opening Clawbox chat (Ctrl+C to exit)..."
+  fi
+
   acquire_lock
   trap 'release_lock' EXIT INT TERM
+  local tui_args=()
+  [ -n "$session_key" ] && tui_args+=(--session "$session_key")
   OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
-    openclaw tui
+    openclaw tui ${tui_args[@]+"${tui_args[@]}"}
   release_lock
 }
 
 cmd_run() {
-  # clawbox run [--context <path>] [--thinking <level>] [--quiet] [--json] "your message"
+  # clawbox run [--context <path>] [--thinking <level>] [--session <name>] [--quiet] [--json] "your message"
   # --context <path>    Attach file(s) as context (file or directory)
   # --thinking <level>  Thinking level: off|minimal|low|medium|high|xhigh
+  # --session <name>    Named session key for conversation continuity (e.g. "myproject")
   # --quiet             Suppress status banners; only print the agent's response
   # --json              Output result as JSON: {response, elapsed_ms, timestamp, context_files}
   local context_path=""
   local thinking_level=""
+  local session_key=""
   local output_mode="normal"  # normal | quiet | json
   local message=""
 
@@ -233,6 +265,14 @@ cmd_run() {
         thinking_level="${2:-}"
         if [ -z "$thinking_level" ]; then
           echo "Usage: clawbox run --thinking <level> \"message\""
+          exit 1
+        fi
+        shift 2
+        ;;
+      --session|-s)
+        session_key="${2:-}"
+        if [ -z "$session_key" ]; then
+          echo "Usage: clawbox run --session <name> \"message\""
           exit 1
         fi
         shift 2
@@ -334,10 +374,13 @@ cmd_run() {
 
   local agent_args=()
   [ -n "$thinking_level" ] && agent_args+=(--thinking "$thinking_level")
+  [ -n "$session_key" ]    && agent_args+=(--session-id "$session_key")
 
   # Use python3 for millisecond timestamps (macOS BSD date doesn't support %N)
   local run_start
   run_start=$(python3 -c "import time; print(int(time.time() * 1000))")
+
+  [ -n "$session_key" ] && _banner "▶ Session: $session_key"
 
   local response
   response=$(OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
@@ -354,7 +397,7 @@ cmd_run() {
       printf '%s\n' "$response"
       ;;
     json)
-      # Emit compact JSON: {response, elapsed_ms, timestamp, context_files}
+      # Emit compact JSON: {response, elapsed_ms, timestamp, context_files, session}
       # Use python3 for proper JSON escaping (jq not always available)
       local ts
       ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -365,9 +408,10 @@ data = {
     'elapsed_ms': int(sys.argv[2]),
     'timestamp': sys.argv[3],
     'context_files': int(sys.argv[4]),
+    'session': sys.argv[5] if sys.argv[5] else None,
 }
 print(json.dumps(data))
-" "$response" "$elapsed_ms" "$ts" "$context_file_count"
+" "$response" "$elapsed_ms" "$ts" "$context_file_count" "$session_key"
       ;;
   esac
 }
@@ -486,11 +530,13 @@ Commands:
   status             Show container + gateway status
   logs               Tail container logs
   chat               Open interactive TUI chat session
+  chat --session <name>  Open TUI with a named session (persistent per-project threads)
   run "message"      Send a one-shot message to the agent
   run --context <path> "msg"  Inject file/dir as context before the message
   run --thinking <level> "msg"  Set thinking level (off|minimal|low|medium|high|xhigh)
+  run --session <name> "msg"  Use a named session (persistent conversation thread)
   run --quiet "msg"  Suppress status banners; print only the agent's response
-  run --json "msg"   Output result as JSON {response, elapsed_ms, timestamp, context_files}
+  run --json "msg"   Output result as JSON {response, elapsed_ms, timestamp, context_files, session}
   ask "question"     Alias for run — supports the same flags
   task "description" Run a task in the background
   task-status        Check background task progress

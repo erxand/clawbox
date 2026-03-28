@@ -132,7 +132,8 @@ Current interaction: `clawbox run "message"` or `clawbox chat` (TUI). Both are f
 - **`clawbox ask`** — shorter alias, maybe with `-f file` to pass a file as context
 - **Persistent task mode:** `clawbox task "build X"` — agent works on it in the background, you can check status with `clawbox status`, get a summary when done
 - **Context injection:** `clawbox run --context ./src/ "refactor the auth module"` — auto-attaches files as context ✅ **Implemented (2026-03-27)** — `--context <file|dir>` prepends file contents to the message (skips node_modules, .git, binaries, files >10KB; caps at 50 files / 64KB). Also added `--thinking <level>` flag to `run`/`ask`.
-- **Session naming:** `clawbox chat --session myproject` — named sessions so you can have separate conversation threads per project
+- **Session naming:** `clawbox chat --session myproject` — named sessions so you can have separate conversation threads per project ✅ **Implemented (2026-03-27)** — `--session <name>` / `-s` flag added to both `clawbox run` and `clawbox chat`. Passes `--session-id <name>` to `openclaw agent` and `--session <name>` to `openclaw tui`. `--json` output now includes a `session` key. T10 test: 10/10 pass.
+  - **Finding (T10):** Named sessions have isolated conversation history but share the container agent's long-term memory (MEMORY.md). If the agent writes something to memory in session A, session B can read it. This is by design for single-container deployments. For full isolation (memory + history), use separate containers.
 - **Output modes:** `--json` for scripting, `--quiet` for just the final answer, `--verbose` for full tool trace ✅ **Implemented (2026-03-27)** — `--quiet`/`-q` sends banners to stderr, response-only on stdout; `--json`/`-j` emits `{response, elapsed_ms, timestamp, context_files}` as valid JSON. Both work with `--context`. T9 test: 18/18 pass.
 
 ---
