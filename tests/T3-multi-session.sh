@@ -18,6 +18,10 @@ mkdir -p "$RESULT_DIR"
 
 log() { echo "[T3 $(date +%H:%M:%S)] $*"; }
 
+# Create a sentinel file so we can find only TASK.md files created during this run
+SENTINEL="/tmp/t3-sentinel-$$"
+touch "$SENTINEL"
+
 wait_healthy() {
   for i in $(seq 1 60); do
     STATUS=$(docker inspect "$CONTAINER" --format '{{.State.Health.Status}}' 2>/dev/null || echo "missing")
@@ -52,6 +56,9 @@ log "=== SESSION 1: Start bookstore API ==="
 "$CLAWBOX" start
 wait_healthy
 
+# Record the start time inside the container for find -newer filtering
+SESSION1_START_MARKER=$(docker exec "$CONTAINER" sh -c "touch /tmp/t3-session1-start && echo /tmp/t3-session1-start" 2>/dev/null || echo "")
+
 SESSION1_MSG="Start building an Express API for a bookstore. Create the project structure and the first endpoint: GET /books that returns a hardcoded list of 3 books. Save your progress plan to TASK.md then stop — I'll continue this task in a new session."
 
 log "Sending session 1 message..."
@@ -66,8 +73,13 @@ log "Session 1 completed in ${SESSION1_TIME}s"
 
 # Capture session 1 state (workspace is /home/node/.openclaw/workspace/)
 WORKSPACE="/home/node/.openclaw/workspace"
-S1_TASK_MD=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -name 'TASK.md' 2>/dev/null | grep -v '/.git/' | head -1 | xargs cat 2>/dev/null" || echo "(not found)")
-S1_TASK_MD_PATH=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -name 'TASK.md' 2>/dev/null | grep -v '/.git/' | head -1" || echo "(not found)")
+# Use -newer to find only TASK.md files created during this session (not leftovers from T15 etc.)
+S1_TASK_MD_PATH=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -name 'TASK.md' -newer /tmp/t3-session1-start 2>/dev/null | grep -v '/.git/' | head -1" 2>/dev/null || echo "(not found)")
+# Fallback: if no recent TASK.md, get newest by modification time
+if [ -z "$S1_TASK_MD_PATH" ] || [ "$S1_TASK_MD_PATH" = "(not found)" ]; then
+  S1_TASK_MD_PATH=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -name 'TASK.md' 2>/dev/null | grep -v '/.git/' | xargs ls -t 2>/dev/null | head -1" 2>/dev/null || echo "(not found)")
+fi
+S1_TASK_MD=$(docker exec "$CONTAINER" sh -c "cat '$S1_TASK_MD_PATH' 2>/dev/null" 2>/dev/null || echo "(not found)")
 S1_FILES=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -type f \( -name '*.js' -o -name '*.json' \) 2>/dev/null | grep -v node_modules | grep -v '/.git/' | grep -v AGENTS.md | grep -v SOUL.md | head -20" || echo "(none)")
 S1_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd $WORKSPACE && git log --oneline 2>/dev/null" || echo "(no git repo)")
 
@@ -100,6 +112,12 @@ log "Session 2 completed in ${SESSION2_TIME}s"
 # ── Verify endpoints ──────────────────────────────────────────────
 
 log "Verifying endpoints..."
+
+# Find the project main entry point and start the server explicitly for endpoint checks
+# This handles the case where the agent's server exited after session 2
+PROJECT_DIR=$(docker exec "$CONTAINER" sh -c "dirname '$S1_TASK_MD_PATH'" 2>/dev/null || echo "$WORKSPACE/bookstore-api")
+log "Attempting to start server at $PROJECT_DIR for endpoint checks..."
+docker exec -d "$CONTAINER" sh -c "cd '$PROJECT_DIR' && node index.js 2>/tmp/t3-server.log || node src/index.js 2>/tmp/t3-server.log || true" 2>/dev/null || true
 sleep 5
 
 # Check from inside container (ports not mapped to host by default)
@@ -111,9 +129,9 @@ DELETE_BOOK=$(docker exec "$CONTAINER" sh -c "curl -s -X DELETE http://localhost
 # Also try port 3001 in case agent used that
 GET_BOOKS_ALT=$(docker exec "$CONTAINER" sh -c "curl -s http://localhost:3001/books 2>/dev/null" || echo "FAIL")
 
-# Final state
-S2_TASK_MD=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -name 'TASK.md' 2>/dev/null | grep -v '/.git/' | head -1 | xargs cat 2>/dev/null" || echo "(not found)")
-S2_TASK_MD_PATH=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -name 'TASK.md' 2>/dev/null | grep -v '/.git/' | head -1" || echo "(not found)")
+# Final state — get the same TASK.md path that was found in session 1 (it should be updated by session 2)
+S2_TASK_MD_PATH="$S1_TASK_MD_PATH"
+S2_TASK_MD=$(docker exec "$CONTAINER" sh -c "cat '$S2_TASK_MD_PATH' 2>/dev/null" 2>/dev/null || echo "(not found)")
 S2_FILES=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -type f \( -name '*.js' -o -name '*.json' \) 2>/dev/null | grep -v node_modules | grep -v '/.git/' | grep -v AGENTS.md | head -20" || echo "(none)")
 S2_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd $WORKSPACE && git log --oneline 2>/dev/null" || echo "(no git repo)")
 

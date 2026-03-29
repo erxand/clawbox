@@ -51,6 +51,14 @@
 - **Verdict:** ISSUE-41 confirmed fixed. Multi-session continuity is now reliable end-to-end. ✅
 - **Endpoints after session 2 (despite rebuild):** All working — GET /books ✓, GET /books/1 ✓, POST /books ✓, DELETE /books/1 ✓ (agent completed the full API even though it rebuilt)
 
+**Run 6 (2026-03-29) — ISSUE-45 found:**
+- ✓ Session 1: Agent created `bookstore-api/TASK.md` with full CRUD plan, committed to git (141s)
+- ✓ Session 2: Agent correctly resumed, added GET /books/:id, POST /books, DELETE /books, verified with 11 manual tests, 2 commits (196s)
+- ✗ T3 result file showed `blog-api-timeout-test/TASK.md` (from T15 leftover) instead of `bookstore-api/TASK.md` — test infrastructure bug, not agent regression
+- ✗ Endpoint checks showed FAIL — server exited after session 2, test checked post-exit (test infrastructure bug)
+- **Root cause (ISSUE-45):** `find | head -1` is alphabetical, not time-ordered. Old workspace artifacts pollute TASK.md detection.
+- **Fix applied (2026-03-29):** T3 now uses `find -newer` to detect only TASK.md created in current run; endpoint checks restart the server explicitly before curling. ✅
+
 ### T4 — Error recovery (2026-03-26, re-run 2026-03-28, re-run 2026-03-28 #2)
 - ✓ Agent correctly diagnosed `MODULE_NOT_FOUND` error in 26s (first run), 29s (re-run 1), 31s (re-run 2)
 - ✓ Identified dead `require('nonexistent-package')` and removed it all three times
@@ -228,6 +236,13 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - ⚠️ Agent also auto-created IMPLEMENTATION_SUMMARY.md — slight gold-plating but harmless
 - **Verdict:** Strong end-to-end performance. Agent reads code selectively, produces working features, doesn't break existing tests. Ready for harder tasks (ISSUE-5 from Phase 3: real project from GitHub).
 
+**Re-run (2026-03-29) — ISSUE-44 found (API rate limiting):**
+- ✗ Agent received `⚠️ API rate limit reached. Please try again later.` from Anthropic API immediately
+- ✗ Could explore filesystem but lacked API quota to write files — task failed with 0/3 checks
+- **Root cause:** Two compounding problems: (1) Anthropic API rate limit hit during test window; (2) T5 scaffold bug still caused `src/routes/recipes.js` not to be created (missing `mkdir -p src/routes` before writing to that path — already noted as "fixed" in Run 1 but was in the wrong docker exec block)
+- **Fixes applied (2026-03-29):** T5 scaffold now explicitly creates `src/routes` and `src/middleware` directories in the correct docker exec block; ISSUE-44 documented (rate limit detection + skip logic TBD)
+- **Verdict:** T5 re-run failure was infrastructure (API quota), not agent regression. Original 2026-03-26 result stands.
+
 ### T14 — Multi-error recovery (2026-03-28) ✅
 
 **Errors introduced simultaneously:**
@@ -282,6 +297,20 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 - ⚠️ The 2-second stagger between requests means task B waited for task A to complete before starting — this is the main finding
 - **Verdict:** Isolation is clean. But clawbox does NOT handle true parallelism — concurrent requests queue, not interleave. For users expecting background parallelism (e.g. running two builds at once), this is a documentation gap. The behavior is actually safe, but should be explicitly documented.
 - **Next step:** ISSUE-30 below — document the sequential-session behavior and add a warning to the CLI if a second request arrives while one is in-flight.
+
+### ISSUE-45: T3 test picks stale TASK.md from previous test runs ✅ Fixed 2026-03-29
+**Problem:** T3 uses `find $WORKSPACE -name 'TASK.md' | head -1` which returns files sorted alphabetically. When previous tests (e.g. T15) leave TASK.md files in the workspace (e.g. `blog-api-timeout-test/TASK.md`), T3 captures and reports those instead of the one created in the current run. Also, the server started by session 2 exits after the agent finishes, so endpoint checks done post-session always fail — even when all endpoints are fully working.
+**Fix:** (1) T3 now uses `find -newer /tmp/t3-session1-start` to find only TASK.md files created during this test run, with a fallback to `ls -t` (newest by mtime). (2) Session 2 TASK.md capture now reuses the session 1 path rather than re-searching (avoids stale pick). (3) Endpoint check now explicitly restarts the server at the project dir before curling, so endpoints can be verified even after the agent exits.
+
+### ISSUE-44: API rate limit causes silent partial task failure (2026-03-29)
+**Problem:** During T5 re-run (2026-03-29), the container agent immediately received `⚠️ API rate limit reached. Please try again later.` from the Anthropic API. The agent printed a warning and attempted to continue, but was unable to complete the task — it could explore the filesystem but lacked tool quota to write files. The test result showed all checks as failures, but the actual cause was API rate limiting, not agent logic failure.
+**Scope:** Any test that runs `clawbox run` or `clawbox task` during a period of heavy API usage may silently fail in this way. The test scripts have no way to distinguish "agent gave up" from "agent was rate-limited."
+**Compounding factor (T5 scaffold bug):** The T5 scaffold script was also missing `mkdir -p src/routes` before creating `src/routes/recipes.js` — this made `index.js` fail to load routes, causing the agent to encounter an import error even if it had managed to read the project. Fixed in T5 script: second scaffold `docker exec` now creates `src/routes` and `src/middleware` directories explicitly.
+**Potential fixes:**
+- Detect "API rate limit" in agent output and mark test as `SKIP` (not `FAIL`) 
+- Add `--retry` logic to test runner: if rate-limited, wait 60s and re-issue
+- Document in README that tests should be spaced out to avoid hitting rate limits
+**Status:** Open
 
 ### ISSUE-43: Task log overwritten by each new task ✅ Fixed 2026-03-29
 **Problem:** `~/.clawbox-task.log` was a single fixed path — every `clawbox task` call overwrote it. This destroyed history of previous tasks and caused T15 to read test 9's log (a trivial follow-up task) instead of the timeout test's log, making the result section useless.

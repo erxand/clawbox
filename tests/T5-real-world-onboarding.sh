@@ -29,7 +29,7 @@ RESULT_FILE="${RESULT_DIR}/${TIMESTAMP}-T5-real-world-onboarding.md"
 CONTAINER="clawbox-work"
 TIMEOUT_SECONDS=900  # 15 minutes
 WORKSPACE="/home/node/.openclaw/workspace"
-PROJECT_DIR="/home/node/workspace/onboarding-test"
+PROJECT_DIR="$WORKSPACE/onboarding-test"
 
 mkdir -p "$RESULT_DIR"
 
@@ -77,7 +77,7 @@ PKGJSON
 
 # Scaffold source files
 docker exec "$CONTAINER" sh -c "
-  mkdir -p $PROJECT_DIR/src $PROJECT_DIR/test
+  mkdir -p $PROJECT_DIR/src/routes $PROJECT_DIR/src/middleware $PROJECT_DIR/test
   cd $PROJECT_DIR
 
   cat > src/db.js << 'DBJS'
@@ -310,7 +310,7 @@ log "Baseline: $BASELINE_PASS test blocks, fail mentions: $BASELINE_FAIL"
 
 # ── Send task ────────────────────────────────────────────────────────────────
 
-TASK_MSG="I have a small Express.js recipe API project at /home/node/workspace/onboarding-test/.
+TASK_MSG="I have a small Express.js recipe API project at $PROJECT_DIR/.
 Please:
 1. Read the source code and summarize the architecture in 2-3 sentences.
 2. Add a configurable rate limiting middleware to src/middleware/rateLimit.js. It should: track request counts per IP per time window (default: 10 req/min), return 429 with {error:'Too many requests'} when exceeded, accept {limit, windowMs} options, store state in memory.
@@ -318,7 +318,7 @@ Please:
 4. Write tests for the rate limiter in test/rateLimit.test.js that verify: (a) requests below limit pass through, (b) requests over limit get 429, (c) window resets after windowMs.
 5. Run the full test suite (test/**/*.test.js) and make sure all tests pass — both the existing tests and your new ones.
 
-Use absolute paths. The project is at /home/node/workspace/onboarding-test/."
+Use absolute paths. The project is at $PROJECT_DIR/."
 
 log "Sending onboarding task to agent..."
 START_TIME=$(date +%s)
