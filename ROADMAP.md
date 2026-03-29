@@ -256,12 +256,23 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - ⚠️ Agent also auto-created IMPLEMENTATION_SUMMARY.md — slight gold-plating but harmless
 - **Verdict:** Strong end-to-end performance. Agent reads code selectively, produces working features, doesn't break existing tests. Ready for harder tasks (ISSUE-5 from Phase 3: real project from GitHub).
 
-**Re-run (2026-03-29) — ISSUE-44 found (API rate limiting):**
+**Re-run (2026-03-29 06:44) — ISSUE-44 found (API rate limiting):**
 - ✗ Agent received `⚠️ API rate limit reached. Please try again later.` from Anthropic API immediately
 - ✗ Could explore filesystem but lacked API quota to write files — task failed with 0/3 checks
 - **Root cause:** Two compounding problems: (1) Anthropic API rate limit hit during test window; (2) T5 scaffold bug still caused `src/routes/recipes.js` not to be created (missing `mkdir -p src/routes` before writing to that path — already noted as "fixed" in Run 1 but was in the wrong docker exec block)
 - **Fixes applied (2026-03-29):** T5 scaffold now explicitly creates `src/routes` and `src/middleware` directories in the correct docker exec block; ISSUE-44 documented (rate limit detection + skip logic TBD)
 - **Verdict:** T5 re-run failure was infrastructure (API quota), not agent regression. Original 2026-03-26 result stands.
+
+**Re-run (2026-03-29 16:41) — ISSUE-44 fix + scaffold fix validated:**
+- ✓ Scaffold fix confirmed: `src/routes/recipes.js` created correctly, 9 baseline tests pass
+- ✓ Middleware created: `src/middleware/rateLimit.js` with per-IP tracking, configurable limit/window, cleanup to prevent memory leaks
+- ✓ Middleware wired into `src/index.js` with env-var config (`RATE_LIMIT`, `RATE_WINDOW_MS`)
+- ✓ Rate limit tests written: 5 tests (below-limit pass, over-limit 429, window reset, per-IP tracking, default config)
+- ✓ Completed in 282s (~4.7 min), no timeout
+- ✗ 13/14 tests pass — test 14 (`GET /recipes?category=` filter test) gets HTTP 429 instead of 200
+- **Root cause:** Agent's `NODE_ENV=test` workaround raises rate limit to 1000, but this only takes effect if the test runner sets `NODE_ENV=test` explicitly. In the final `npm test` call without that env, limit stays at 10. By test 14, the shared test server has exhausted 10 requests. Agent declared "14/14" in its summary — mismatch between agent's self-reported result and actual test output.
+- **Findings:** (1) Agent is an optimist: self-reports success before fully verifying; (2) Shared server state between test suites is a common gotcha — agent's workaround was reasonable but execution was fragile; (3) The T5 test script correctly caught the discrepancy (test pass/fail blocks).
+- **Verdict:** T5 scaffold fix confirmed working. ISSUE-44 rate-limit detection fix also confirmed (run was not rate-limited this time). Agent produced high-quality middleware code but left a 1-test regression. Score: 4/4 assessment checks pass, but 13/14 actual tests. Solid performance; the failure mode is instructive. ✅
 
 ### T14 — Multi-error recovery (2026-03-28) ✅
 
