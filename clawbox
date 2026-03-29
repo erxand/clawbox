@@ -247,16 +247,18 @@ cmd_chat() {
 }
 
 cmd_run() {
-  # clawbox run [--context <path>] [--thinking <level>] [--session <name>] [--quiet] [--json] "your message"
+  # clawbox run [--context <path>] [--thinking <level>] [--session <name>] [--quiet] [--json] [--retry <n>] "your message"
   # --context <path>    Attach file(s) as context (file or directory)
   # --thinking <level>  Thinking level: off|minimal|low|medium|high|xhigh
   # --session <name>    Named session key for conversation continuity (e.g. "myproject")
   # --quiet             Suppress status banners; only print the agent's response
   # --json              Output result as JSON: {response, elapsed_ms, timestamp, context_files}
+  # --retry <n>         Retry up to N times (60s delay) if API rate-limited (default: 0)
   local context_path=""
   local thinking_level=""
   local session_key=""
   local output_mode="normal"  # normal | quiet | json
+  local retry_max=0
   local message=""
 
   while [[ $# -gt 0 ]]; do
@@ -292,6 +294,14 @@ cmd_run() {
       --json|-j)
         output_mode="json"
         shift
+        ;;
+      --retry|-r)
+        retry_max="${2:-}"
+        if [ -z "$retry_max" ] || ! [[ "$retry_max" =~ ^[0-9]+$ ]]; then
+          echo "Usage: clawbox run --retry <n> \"message\""
+          exit 1
+        fi
+        shift 2
         ;;
       *)
         message="${1:-}"
@@ -391,8 +401,32 @@ cmd_run() {
   [ -n "$session_key" ] && _banner "▶ Session: $session_key"
 
   local response
-  response=$(OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
-    openclaw agent --agent main ${agent_args[@]+"${agent_args[@]}"} -m "$message")
+  local attempt=0
+  while true; do
+    response=$(OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
+      openclaw agent --agent main ${agent_args[@]+"${agent_args[@]}"} -m "$message")
+
+    # ISSUE-44: Detect API rate limit in response. Rate-limited responses contain
+    # the phrase "API rate limit reached" from the OpenClaw gateway.
+    if echo "$response" | grep -qi "API rate limit reached\|rate limit reached\|rate_limit_error"; then
+      if [ "$attempt" -lt "$retry_max" ]; then
+        attempt=$((attempt + 1))
+        _banner "⚠ Rate limited by API (attempt $attempt/$retry_max). Waiting 60s before retry..."
+        release_lock
+        sleep 60
+        acquire_lock
+      else
+        # No more retries — emit rate-limit sentinel to stderr + exit 2
+        echo "" >&2
+        echo "⚠ CLAWBOX_RATE_LIMITED: API rate limit reached. Retry later or use --retry <n>." >&2
+        echo "CLAWBOX_RATE_LIMITED" >&2
+        release_lock
+        exit 2
+      fi
+    else
+      break
+    fi
+  done
 
   local run_end
   run_end=$(python3 -c "import time; print(int(time.time() * 1000))")
@@ -851,6 +885,7 @@ Commands:
   run --session <name> "msg"  Use a named session (persistent conversation thread)
   run --quiet "msg"  Suppress status banners; print only the agent's response
   run --json "msg"   Output result as JSON {response, elapsed_ms, timestamp, context_files, session}
+  run --retry <n> "msg"  Retry up to N times (60s delay) if API rate-limited (exit 2 on limit)
   ask "question"     Alias for run — supports the same flags
   task "description" Run a task in the background (output saved to ~/.clawbox-task.log)
   task --context <path> "desc"  Background task with file/dir context

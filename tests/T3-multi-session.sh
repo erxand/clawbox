@@ -8,6 +8,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
+
 CLAWBOX="${SCRIPT_DIR}/../clawbox"
 RESULT_DIR="${SCRIPT_DIR}/results"
 TIMESTAMP=$(date +%Y-%m-%d-%H-%M)
@@ -82,12 +85,19 @@ SESSION1_MSG="Create a NEW project directory called '${PROJECT_NAME}' in /home/n
 log "Sending session 1 message..."
 SESSION1_START=$(date +%s)
 
-OPENCLAW_GATEWAY_URL="ws://localhost:18790" OPENCLAW_GATEWAY_TOKEN="clawbox" \
-  openclaw agent --agent main -m "$SESSION1_MSG" 2>&1 || true
+SESSION1_OUTPUT=$(OPENCLAW_GATEWAY_URL="ws://localhost:18790" OPENCLAW_GATEWAY_TOKEN="clawbox" \
+  openclaw agent --agent main -m "$SESSION1_MSG" 2>&1 || true)
 
 SESSION1_END=$(date +%s)
 SESSION1_TIME=$((SESSION1_END - SESSION1_START))
 log "Session 1 completed in ${SESSION1_TIME}s"
+
+# ISSUE-44: Check for rate limit after session 1
+if is_rate_limited "$SESSION1_OUTPUT"; then
+  skip_rate_limited "T3 — Multi-session continuity (session 1)" "$RESULT_FILE" "$(echo "$SESSION1_OUTPUT" | grep -i "rate limit" | head -3)"
+  log "SKIPPED due to API rate limit in session 1."
+  exit 0
+fi
 
 # Capture session 1 state — look for TASK.md in the named project dir specifically
 # This is deterministic: we told the agent exactly where to put the project
@@ -120,12 +130,19 @@ SESSION2_MSG="Continue the bookstore API from where you left off. The project is
 log "Sending session 2 message..."
 SESSION2_START=$(date +%s)
 
-OPENCLAW_GATEWAY_URL="ws://localhost:18790" OPENCLAW_GATEWAY_TOKEN="clawbox" \
-  openclaw agent --agent main -m "$SESSION2_MSG" 2>&1 || true
+SESSION2_OUTPUT=$(OPENCLAW_GATEWAY_URL="ws://localhost:18790" OPENCLAW_GATEWAY_TOKEN="clawbox" \
+  openclaw agent --agent main -m "$SESSION2_MSG" 2>&1 || true)
 
 SESSION2_END=$(date +%s)
 SESSION2_TIME=$((SESSION2_END - SESSION2_START))
 log "Session 2 completed in ${SESSION2_TIME}s"
+
+# ISSUE-44: Check for rate limit after session 2
+if is_rate_limited "$SESSION2_OUTPUT"; then
+  skip_rate_limited "T3 — Multi-session continuity (session 2)" "$RESULT_FILE" "$(echo "$SESSION2_OUTPUT" | grep -i "rate limit" | head -3)"
+  log "SKIPPED due to API rate limit in session 2."
+  exit 0
+fi
 
 # ── Verify endpoints ──────────────────────────────────────────────
 

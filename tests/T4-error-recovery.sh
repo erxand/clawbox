@@ -8,6 +8,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
+
 CLAWBOX="${SCRIPT_DIR}/../clawbox"
 RESULT_DIR="${SCRIPT_DIR}/results"
 TIMESTAMP=$(date +%Y-%m-%d-%H-%M)
@@ -73,6 +76,13 @@ AGENT_OUTPUT=$(OPENCLAW_GATEWAY_URL="ws://localhost:18790" OPENCLAW_GATEWAY_TOKE
 FIX_END=$(date +%s)
 FIX_TIME=$((FIX_END - FIX_START))
 log "Agent responded in ${FIX_TIME}s"
+
+# ISSUE-44: Check for rate limit before verification
+if is_rate_limited "$AGENT_OUTPUT"; then
+  skip_rate_limited "T4 — Error recovery" "$RESULT_FILE" "$(echo "$AGENT_OUTPUT" | grep -i "rate limit" | head -3)"
+  log "SKIPPED due to API rate limit."
+  exit 0
+fi
 
 # ── Verify fix ─────────────────────────────────────────────────────
 

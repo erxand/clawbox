@@ -22,6 +22,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
+
 CLAWBOX="${SCRIPT_DIR}/../clawbox"
 RESULT_DIR="${SCRIPT_DIR}/results"
 TIMESTAMP=$(date +%Y-%m-%d-%H-%M)
@@ -344,6 +347,14 @@ fi
 
 END_TIME=$(date +%s)
 ELAPSED=$(( END_TIME - START_TIME ))
+
+# ISSUE-44: Check for rate limit before doing any verification
+AGENT_OUTPUT_CHECK=$(cat /tmp/t5-output.txt 2>/dev/null || echo "")
+if is_rate_limited "$AGENT_OUTPUT_CHECK"; then
+  skip_rate_limited "T5 — Real-world project onboarding" "$RESULT_FILE" "$(echo "$AGENT_OUTPUT_CHECK" | grep -i "rate limit" | head -3)"
+  log "SKIPPED due to API rate limit."
+  exit 0
+fi
 
 # ── Verify results ────────────────────────────────────────────────────────────
 

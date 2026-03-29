@@ -9,6 +9,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
+
 CLAWBOX="${SCRIPT_DIR}/../clawbox"
 RESULT_DIR="${SCRIPT_DIR}/results"
 TIMESTAMP=$(date +%Y-%m-%d-%H-%M)
@@ -89,6 +92,14 @@ done
 
 END_TIME=$(date +%s)
 ELAPSED=$(( END_TIME - START_TIME ))
+
+# ISSUE-44: Check the task log for rate limit messages before proceeding
+TASK_LOG_CONTENT=$(cat "$HOME/.clawbox-task.log" 2>/dev/null || echo "")
+if is_rate_limited "$TASK_LOG_CONTENT"; then
+  skip_rate_limited "T1 — Long-running task" "$RESULT_FILE" "$(echo "$TASK_LOG_CONTENT" | grep -i "rate limit" | head -3)"
+  log "SKIPPED due to API rate limit."
+  exit 0
+fi
 
 # ── Verify results ─────────────────────────────────────────────────
 

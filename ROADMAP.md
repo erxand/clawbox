@@ -320,15 +320,15 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 **Problem:** T3 uses `find $WORKSPACE -name 'TASK.md' | head -1` which returns files sorted alphabetically. When previous tests (e.g. T15) leave TASK.md files in the workspace (e.g. `blog-api-timeout-test/TASK.md`), T3 captures and reports those instead of the one created in the current run. Also, the server started by session 2 exits after the agent finishes, so endpoint checks done post-session always fail — even when all endpoints are fully working.
 **Fix:** (1) T3 now uses `find -newer /tmp/t3-session1-start` to find only TASK.md files created during this test run, with a fallback to `ls -t` (newest by mtime). (2) Session 2 TASK.md capture now reuses the session 1 path rather than re-searching (avoids stale pick). (3) Endpoint check now explicitly restarts the server at the project dir before curling, so endpoints can be verified even after the agent exits.
 
-### ISSUE-44: API rate limit causes silent partial task failure (2026-03-29)
+### ISSUE-44: API rate limit causes silent partial task failure ✅ Fixed 2026-03-29
 **Problem:** During T5 re-run (2026-03-29), the container agent immediately received `⚠️ API rate limit reached. Please try again later.` from the Anthropic API. The agent printed a warning and attempted to continue, but was unable to complete the task — it could explore the filesystem but lacked tool quota to write files. The test result showed all checks as failures, but the actual cause was API rate limiting, not agent logic failure.
 **Scope:** Any test that runs `clawbox run` or `clawbox task` during a period of heavy API usage may silently fail in this way. The test scripts have no way to distinguish "agent gave up" from "agent was rate-limited."
 **Compounding factor (T5 scaffold bug):** The T5 scaffold script was also missing `mkdir -p src/routes` before creating `src/routes/recipes.js` — this made `index.js` fail to load routes, causing the agent to encounter an import error even if it had managed to read the project. Fixed in T5 script: second scaffold `docker exec` now creates `src/routes` and `src/middleware` directories explicitly.
-**Potential fixes:**
-- Detect "API rate limit" in agent output and mark test as `SKIP` (not `FAIL`) 
-- Add `--retry` logic to test runner: if rate-limited, wait 60s and re-issue
-- Document in README that tests should be spaced out to avoid hitting rate limits
-**Status:** Open
+**Fix applied (2026-03-29):**
+1. **CLI (`clawbox run`)**: Added rate-limit detection on agent response text (patterns: "API rate limit reached", "rate_limit_error", "overloaded_error"). On detection: exits with code 2 and prints `CLAWBOX_RATE_LIMITED` to stderr. Added `--retry <n>` flag: retries up to N times with 60s delay before giving up with exit 2.
+2. **Test scripts**: Created `tests/lib/common.sh` with shared `is_rate_limited()` and `skip_rate_limited()` helpers. Updated T1, T3, T4, T5 to source this lib and check for rate limits after agent calls — on detection, writes a `SKIP` result file (not `FAIL`) and exits 0.
+3. **Help text**: `clawbox help` now documents `run --retry <n>`.
+**Result:** Rate-limited test runs now produce clear SKIP entries in results/ instead of false FAIL results. Users can use `clawbox run --retry 3 "..."` for automatic backoff.
 
 ### ISSUE-43: Task log overwritten by each new task ✅ Fixed 2026-03-29
 **Problem:** `~/.clawbox-task.log` was a single fixed path — every `clawbox task` call overwrote it. This destroyed history of previous tasks and caused T15 to read test 9's log (a trivial follow-up task) instead of the timeout test's log, making the result section useless.
