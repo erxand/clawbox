@@ -56,6 +56,9 @@ if [ ! -f "$OPENCLAW_DIR/openclaw.json" ]; then
 fi
 
 # ── Configure git identity + GitHub credentials ──────────────────────
+# GIT_CONFIG_GLOBAL is set to /home/node/.openclaw/.gitconfig in docker-compose.yml,
+# so git config --global writes to the persistent volume (not the read-only rootfs).
+# This works whether or not read_only: true is set — harmless on writable rootfs too.
 git config --global user.email "agent@clawbox"
 git config --global user.name "OpenClaw Agent"
 # No GitHub credentials — container agent can clone public repos but cannot push.

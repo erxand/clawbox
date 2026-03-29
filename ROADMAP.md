@@ -228,6 +228,28 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - ⚠️ Agent also auto-created IMPLEMENTATION_SUMMARY.md — slight gold-plating but harmless
 - **Verdict:** Strong end-to-end performance. Agent reads code selectively, produces working features, doesn't break existing tests. Ready for harder tasks (ISSUE-5 from Phase 3: real project from GitHub).
 
+### T14 — Multi-error recovery (2026-03-28) ✅
+
+**Errors introduced simultaneously:**
+1. Syntax error: missing closing `});` in `server.js` app.get handler
+2a. Wrong import path: `test.js` required `./helpers` (doesn't exist; should be `./utils`)
+2b. Nonexistent function: `test.js` called `subtract()` which wasn't in `utils.js`
+
+**Results:**
+- ✓ Agent found and fixed Error 1 (syntax error) — added missing closing brace
+- ✓ Agent found and fixed Error 2a (wrong import path) — changed `./helpers` → `./utils`
+- ✓ Agent found and fixed Error 2b (missing function) — **added `subtract()` to utils.js** instead of removing the test
+- ✓ All 3 tests passing after fixes
+- ✓ Server starts clean
+- ✓ Agent worked systematically: fixed one thing, re-ran, fixed next, confirmed all fixed
+- ✓ 132s total — efficient for 3 separate errors
+- **Score: 5/6 pass, 0 fail, 1 warn** (warn was false-positive grep timing)
+
+**Key findings:**
+- Agent is an "implementer, not a deleter" — for the missing `subtract()`, it added the function rather than removing the test. This is generally the right call (preserves test intent) and shows good judgment.
+- Agent correctly used the verify-fix-verify loop: ran server → found error → fixed → ran server again; ran tests → found error → fixed → ran tests again. No spiraling, no giving up.
+- Phase 2 open item "self-recovery prompts" confirmed working well. Agent handles multi-layered errors systematically without any special scaffolding.
+
 ### T12 — cancel command (2026-03-28) ✅
 - ✓ 18/18 checks pass
 - ✓ `clawbox cancel` with no running task: informative message, exit 0

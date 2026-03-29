@@ -27,6 +27,12 @@ services:
       # Default is 0 (disabled) — agent cannot browse the internet.
       # The agent can still make outbound calls via npm/fetch in code it runs.
       - OPENCLAW_ALLOW_WEB=${OPENCLAW_ALLOW_WEB:-0}
+      # ── Read-only rootfs support: redirect writable state to volume ──
+      # git config writes go to volume instead of ~/.gitconfig on the rootfs.
+      # npm cache redirected to volume (npmrc NPM_CONFIG_CACHE → .npm-cache).
+      # These env vars are picked up automatically by git and npm.
+      - GIT_CONFIG_GLOBAL=/home/node/.openclaw/.gitconfig
+      - NPM_CONFIG_CACHE=/home/node/.openclaw/.npm-cache
 
     # ── Resource limits ─────────────────────────────────────────────
     deploy:
@@ -53,8 +59,18 @@ services:
       nproc:
         soft: 256
         hard: 512
+    # ── Read-only root filesystem ───────────────────────────────────
+    # The container rootfs is read-only — attackers and rogue agent code
+    # cannot modify binaries, libraries, or system files.
+    # All legitimate writes go to:
+    #   - /tmp (tmpfs, cleared on restart)
+    #   - /run (tmpfs, for runtime state)
+    #   - /home/node/.openclaw (persistent volume — workspace, configs, cache)
+    # GIT_CONFIG_GLOBAL and NPM_CONFIG_CACHE redirect writes to the volume.
+    read_only: true
     tmpfs:
       - /tmp:size=256m,mode=1777
+      - /run:size=32m,mode=1777
 
     healthcheck:
       test: ["CMD", "sh", "-c", "openclaw gateway health || exit 1"]

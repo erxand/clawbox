@@ -28,9 +28,16 @@ log "Starting fresh container..."
 "$CLAWBOX" start
 sleep 5
 
+# Create a time sentinel for -newer comparisons — any TASK.md created after this is ours
+docker exec "$CONTAINER" sh -c "touch /tmp/t1-start-sentinel"
+
+# Each run gets a unique project dir so stale workspace state doesn't cause false cache hits
+RUN_ID=$(date +%s)
+PROJECT_NAME="taskman-${RUN_ID}"
+
 # ── Send task ───────────────────────────────────────────────────────
 
-TASK_MSG="Build a full task management web app with: (1) Express backend with SQLite, (2) Multiple API endpoints: GET/POST/PUT/DELETE /tasks, GET /tasks/:id, POST /tasks/:id/complete, (3) User authentication (simple session-based), (4) A vanilla JS frontend with login, task list, add task, mark complete, delete. (5) Write a test suite that tests all API endpoints. Start both servers and run the tests. Use TASK.md to track your progress. IMPORTANT: Initialize git in /home/node/workspace and commit after each major step (scaffold done, backend done, tests passing, frontend done, etc.) so work can be recovered if interrupted."
+TASK_MSG="Create a NEW project directory called '${PROJECT_NAME}' inside /home/node/.openclaw/workspace/ and build a full task management web app there. Requirements: (1) Express backend with SQLite, (2) API endpoints: GET/POST/PUT/DELETE /tasks, GET /tasks/:id, POST /tasks/:id/mark-done, (3) Simple session-based user authentication, (4) Vanilla JS frontend with login, task list, add/mark-done/delete tasks, (5) Test suite covering all API endpoints. Start both servers and run the tests. Use TASK.md inside the project dir to track progress. Initialize git inside the project dir and commit after each major step (scaffold, backend, tests passing, frontend done)."
 
 log "Sending task to agent..."
 START_TIME=$(date +%s)
@@ -56,7 +63,8 @@ while [ $(($(date +%s) - START_TIME)) -lt $TIMEOUT_SECONDS ]; do
   fi
 
   # Check TASK.md (may be in project subdir, search recursively — ISSUE-34)
-  TASK_CONTENT=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -name TASK.md -not -path '*/node_modules/*' 2>/dev/null | head -1 | xargs cat 2>/dev/null" || echo "")
+  # Use -newer flag relative to test start sentinel to avoid stale files from prior runs
+  TASK_CONTENT=$(docker exec "$CONTAINER" sh -c "find /home/node/.openclaw/workspace -name TASK.md -not -path '*/node_modules/*' -newer /tmp/t1-start-sentinel 2>/dev/null | head -1 | xargs cat 2>/dev/null" || echo "")
   if [ -n "$TASK_CONTENT" ]; then
     TASK_MD_FOUND="yes"
     CURRENT_STEP=$(echo "$TASK_CONTENT" | grep -A1 "Current Step" | tail -1 || echo "unknown")
@@ -65,14 +73,15 @@ while [ $(($(date +%s) - START_TIME)) -lt $TIMEOUT_SECONDS ]; do
       LAST_STEP="$CURRENT_STEP"
     fi
     # Early exit if task is complete — no need to wait the full timeout
-    if echo "$TASK_CONTENT" | grep -qiE '(COMPLETE|All objectives achieved|task.*complete)'; then
+    # Use anchored patterns to avoid matching content like "/tasks/:id/complete" or "mark complete"
+    if echo "$TASK_CONTENT" | grep -qiE '^(\*\*)?Status:.*COMPLETE|^Status:.*COMPLETE|All objectives achieved|DONE — all steps complete'; then
       log "Task marked COMPLETE — exiting poll loop early."
       break
     fi
   fi
 
-  # Check git commits (project workspace)
-  GIT_COMMITS=$(docker exec "$CONTAINER" sh -c "cd /home/node/workspace && git log --oneline 2>/dev/null | wc -l" || echo "0")
+  # Check git commits (find project git repo created this run)
+  GIT_COMMITS=$(docker exec "$CONTAINER" sh -c "find /home/node/.openclaw/workspace -name '.git' -newer /tmp/t1-start-sentinel -maxdepth 3 2>/dev/null | head -1 | xargs dirname 2>/dev/null | xargs -I{} sh -c 'cd {} && git log --oneline 2>/dev/null | wc -l'" 2>/dev/null || echo "0")
   GIT_COMMITS=$(echo "$GIT_COMMITS" | tr -d ' ')
 
   log "Poll #$POLLS — running=$RUNNING task_md=$TASK_MD_FOUND commits=$GIT_COMMITS"
@@ -137,7 +146,7 @@ NODE_SERVERS=$(echo "$NODE_SERVERS" | tr -d ' ')
 
 # Run tests inside the container (find the project dir and run npm test)
 log "Running tests inside container..."
-PROJECT_DIR=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -name 'package.json' -not -path '*/node_modules/*' 2>/dev/null | head -1 | xargs dirname 2>/dev/null" 2>/dev/null || echo "")
+PROJECT_DIR=$(docker exec "$CONTAINER" sh -c "find /home/node/.openclaw/workspace -name 'package.json' -not -path '*/node_modules/*' -newer /tmp/t1-start-sentinel 2>/dev/null | head -1 | xargs dirname 2>/dev/null" 2>/dev/null || echo "")
 TEST_RESULTS="(not run)"
 TESTS_PASSING="unknown"
 if [ -n "$PROJECT_DIR" ]; then
@@ -152,11 +161,11 @@ if [ -n "$PROJECT_DIR" ]; then
 fi
 
 # Final TASK.md content (search recursively in project workspace — ISSUE-34)
-FINAL_TASK_MD=$(docker exec "$CONTAINER" sh -c "find /home/node/workspace -name TASK.md -not -path '*/node_modules/*' 2>/dev/null | head -1 | xargs cat 2>/dev/null" || echo "(not found)")
+FINAL_TASK_MD=$(docker exec "$CONTAINER" sh -c "find /home/node/.openclaw/workspace -name TASK.md -not -path '*/node_modules/*' -newer /tmp/t1-start-sentinel 2>/dev/null | head -1 | xargs cat 2>/dev/null" || echo "(not found)")
 [ -z "$FINAL_TASK_MD" ] && FINAL_TASK_MD="(not found)"
 
-# Git log (project workspace)
-GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd /home/node/workspace && git log --oneline 2>/dev/null" || echo "(no git repo)")
+# Git log (find project git repo created by this test run)
+GIT_LOG=$(docker exec "$CONTAINER" sh -c "find /home/node/.openclaw/workspace -name '.git' -newer /tmp/t1-start-sentinel -maxdepth 3 2>/dev/null | head -1 | xargs dirname 2>/dev/null | xargs -I{} sh -c 'cd {} && git log --oneline 2>/dev/null'" 2>/dev/null || echo "(no git repo)")
 
 # ── Write results ──────────────────────────────────────────────────
 
