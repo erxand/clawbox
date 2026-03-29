@@ -51,6 +51,13 @@
 - **Verdict:** ISSUE-41 confirmed fixed. Multi-session continuity is now reliable end-to-end. ✅
 - **Endpoints after session 2 (despite rebuild):** All working — GET /books ✓, GET /books/1 ✓, POST /books ✓, DELETE /books/1 ✓ (agent completed the full API even though it rebuilt)
 
+**Run 7 (2026-03-29) — ISSUE-46 fix validated:**
+- ✓ Workspace cleaned of 13 stale project dirs at test start
+- ✓ Session 1: unique project `bookstore-20260329-104309` created, TASK.md at correct path (195s)
+- ✓ Session 2: agent resumed, correctly read TASK.md, added POST/GET/:id/DELETE/:id endpoints, 4/4 endpoint checks pass (209s)
+- ✓ Assessment: ✓/✓ — first perfectly clean run with all-green endpoint verification
+- **Verdict:** T3 is now fully reliable end-to-end. ISSUE-46 (workspace pollution) confirmed fixed. ✅
+
 **Run 6 (2026-03-29) — ISSUE-45 found:**
 - ✓ Session 1: Agent created `bookstore-api/TASK.md` with full CRUD plan, committed to git (141s)
 - ✓ Session 2: Agent correctly resumed, added GET /books/:id, POST /books, DELETE /books, verified with 11 manual tests, 2 commits (196s)
@@ -297,6 +304,17 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 - ⚠️ The 2-second stagger between requests means task B waited for task A to complete before starting — this is the main finding
 - **Verdict:** Isolation is clean. But clawbox does NOT handle true parallelism — concurrent requests queue, not interleave. For users expecting background parallelism (e.g. running two builds at once), this is a documentation gap. The behavior is actually safe, but should be explicitly documented.
 - **Next step:** ISSUE-30 below — document the sequential-session behavior and add a warning to the CLI if a second request arrives while one is in-flight.
+
+### ISSUE-46: Workspace pollution from previous test runs causes T3 to pick wrong TASK.md ✅ Fixed 2026-03-29
+**Problem:** The container workspace accumulates project directories from T1, T2, T5, T15 and other tests (bookstore-api-v2, blog-api-timeout-test, task-app, taskman-*, etc.). T3's `find -newer` heuristic was still unreliable because the session 1 agent would sometimes `ls` or touch files in old directories, refreshing their mtime and defeating the sentinel-based filter. The `-newer` fallback `xargs ls -t | head -1` would then return a stale project's TASK.md.
+**Fix:** (1) T3 now cleans the workspace at the start of each run — removes all subdirectories except `.git`, `.openclaw`, and `memory`. Seed files at root (AGENTS.md, SOUL.md, etc.) are preserved. (2) T3 uses a unique project name per run (`bookstore-YYYYMMDD-HHMMSS`) and tells the agent the exact directory to use. TASK.md detection is now deterministic: look in `$WORKSPACE/$PROJECT_NAME/TASK.md` first, fall back to full search only if not found.
+**Result (Run 7, 2026-03-29):**
+- ✓ 13 stale project dirs cleaned at start
+- ✓ Session 1: TASK.md at `/home/node/.openclaw/workspace/bookstore-20260329-104309/TASK.md` (correct) (195s)
+- ✓ Session 2: Agent resumed correctly, added GET/POST/DELETE endpoints, all 4 endpoints verified (209s)
+- ✓ Endpoint checks: GET /books ✓, GET /books/1 ✓, POST /books ✓, DELETE /books/1 ✓
+- ✓ Assessment: ✓/✓ — no false picks, no infrastructure noise
+- **Verdict:** ISSUE-46 confirmed fixed. T3 is now fully reliable. ✅
 
 ### ISSUE-45: T3 test picks stale TASK.md from previous test runs ✅ Fixed 2026-03-29
 **Problem:** T3 uses `find $WORKSPACE -name 'TASK.md' | head -1` which returns files sorted alphabetically. When previous tests (e.g. T15) leave TASK.md files in the workspace (e.g. `blog-api-timeout-test/TASK.md`), T3 captures and reports those instead of the one created in the current run. Also, the server started by session 2 exits after the agent finishes, so endpoint checks done post-session always fail — even when all endpoints are fully working.

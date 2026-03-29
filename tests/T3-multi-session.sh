@@ -16,11 +16,11 @@ CONTAINER="clawbox-work"
 
 mkdir -p "$RESULT_DIR"
 
-log() { echo "[T3 $(date +%H:%M:%S)] $*"; }
+# Unique project name per run — avoids TASK.md collisions with leftover workspace dirs
+RUN_ID=$(date +%Y%m%d-%H%M%S)
+PROJECT_NAME="bookstore-${RUN_ID}"
 
-# Create a sentinel file so we can find only TASK.md files created during this run
-SENTINEL="/tmp/t3-sentinel-$$"
-touch "$SENTINEL"
+log() { echo "[T3 $(date +%H:%M:%S)] $*"; }
 
 wait_healthy() {
   for i in $(seq 1 60); do
@@ -50,16 +50,34 @@ wait_for_agent() {
 
 # ── Session 1 ──────────────────────────────────────────────────────
 
-log "=== SESSION 1: Start bookstore API ==="
+log "=== SESSION 1: Start bookstore API (project: $PROJECT_NAME) ==="
 
 "$CLAWBOX" stop 2>/dev/null || true
 "$CLAWBOX" start
 wait_healthy
 
-# Record the start time inside the container for find -newer filtering
-SESSION1_START_MARKER=$(docker exec "$CONTAINER" sh -c "touch /tmp/t3-session1-start && echo /tmp/t3-session1-start" 2>/dev/null || echo "")
+# Clean up stale test project dirs from previous runs to avoid TASK.md false picks.
+# Preserves seed files (AGENTS.md, SOUL.md, USER.md, TOOLS.md, MEMORY.md, HEARTBEAT.md etc.)
+# and the .git repo. Only removes project subdirectories from previous test runs.
+WORKSPACE="/home/node/.openclaw/workspace"
+log "Cleaning up stale project dirs from workspace..."
+docker exec "$CONTAINER" sh -c "
+  cd $WORKSPACE
+  for d in \$(ls -d */ 2>/dev/null); do
+    d=\${d%/}
+    # Keep known seed/system dirs
+    case \$d in
+      .git|.openclaw|memory) continue ;;
+    esac
+    # Remove everything else (stale test project dirs)
+    rm -rf \"\$d\" && echo \"  removed: \$d\"
+  done
+  # Also remove any stale TASK.md in workspace root
+  rm -f TASK.md
+" 2>/dev/null || true
+log "Workspace cleaned."
 
-SESSION1_MSG="Start building an Express API for a bookstore. Create the project structure and the first endpoint: GET /books that returns a hardcoded list of 3 books. Save your progress plan to TASK.md then stop — I'll continue this task in a new session."
+SESSION1_MSG="Create a NEW project directory called '${PROJECT_NAME}' in /home/node/.openclaw/workspace/ and start building an Express API for a bookstore there. Create the project structure and the first endpoint: GET /books that returns a hardcoded list of 3 books. Save your progress plan to TASK.md inside ${PROJECT_NAME}/ then stop — I'll continue this task in a new session."
 
 log "Sending session 1 message..."
 SESSION1_START=$(date +%s)
@@ -71,14 +89,14 @@ SESSION1_END=$(date +%s)
 SESSION1_TIME=$((SESSION1_END - SESSION1_START))
 log "Session 1 completed in ${SESSION1_TIME}s"
 
-# Capture session 1 state (workspace is /home/node/.openclaw/workspace/)
-WORKSPACE="/home/node/.openclaw/workspace"
-# Use -newer to find only TASK.md files created during this session (not leftovers from T15 etc.)
-S1_TASK_MD_PATH=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -name 'TASK.md' -newer /tmp/t3-session1-start 2>/dev/null | grep -v '/.git/' | head -1" 2>/dev/null || echo "(not found)")
-# Fallback: if no recent TASK.md, get newest by modification time
-if [ -z "$S1_TASK_MD_PATH" ] || [ "$S1_TASK_MD_PATH" = "(not found)" ]; then
-  S1_TASK_MD_PATH=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -name 'TASK.md' 2>/dev/null | grep -v '/.git/' | xargs ls -t 2>/dev/null | head -1" 2>/dev/null || echo "(not found)")
+# Capture session 1 state — look for TASK.md in the named project dir specifically
+# This is deterministic: we told the agent exactly where to put the project
+S1_TASK_MD_PATH=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE/$PROJECT_NAME -name 'TASK.md' 2>/dev/null | grep -v '/.git/' | head -1" 2>/dev/null || echo "")
+# Fallback: search anywhere in workspace (agent may have used a slightly different dir name)
+if [ -z "$S1_TASK_MD_PATH" ]; then
+  S1_TASK_MD_PATH=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -name 'TASK.md' 2>/dev/null | grep -v '/.git/' | head -1" 2>/dev/null || echo "(not found)")
 fi
+[ -z "$S1_TASK_MD_PATH" ] && S1_TASK_MD_PATH="(not found)"
 S1_TASK_MD=$(docker exec "$CONTAINER" sh -c "cat '$S1_TASK_MD_PATH' 2>/dev/null" 2>/dev/null || echo "(not found)")
 S1_FILES=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -type f \( -name '*.js' -o -name '*.json' \) 2>/dev/null | grep -v node_modules | grep -v '/.git/' | grep -v AGENTS.md | grep -v SOUL.md | head -20" || echo "(none)")
 S1_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd $WORKSPACE && git log --oneline 2>/dev/null" || echo "(no git repo)")
@@ -97,7 +115,7 @@ wait_healthy
 
 log "=== SESSION 2: Continue bookstore API ==="
 
-SESSION2_MSG="Continue the bookstore API from where you left off. Check TASK.md for context. Add POST /books (add a book), GET /books/:id, and DELETE /books/:id. Then start the server and verify all endpoints work."
+SESSION2_MSG="Continue the bookstore API from where you left off. The project is in /home/node/.openclaw/workspace/${PROJECT_NAME}/. Check TASK.md there for context. Add POST /books (add a book), GET /books/:id, and DELETE /books/:id. Then start the server and verify all endpoints work."
 
 log "Sending session 2 message..."
 SESSION2_START=$(date +%s)
@@ -115,7 +133,7 @@ log "Verifying endpoints..."
 
 # Find the project main entry point and start the server explicitly for endpoint checks
 # This handles the case where the agent's server exited after session 2
-PROJECT_DIR=$(docker exec "$CONTAINER" sh -c "dirname '$S1_TASK_MD_PATH'" 2>/dev/null || echo "$WORKSPACE/bookstore-api")
+PROJECT_DIR=$(docker exec "$CONTAINER" sh -c "dirname '$S1_TASK_MD_PATH'" 2>/dev/null || echo "$WORKSPACE/$PROJECT_NAME")
 log "Attempting to start server at $PROJECT_DIR for endpoint checks..."
 docker exec -d "$CONTAINER" sh -c "cd '$PROJECT_DIR' && node index.js 2>/tmp/t3-server.log || node src/index.js 2>/tmp/t3-server.log || true" 2>/dev/null || true
 sleep 5
