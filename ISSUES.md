@@ -294,18 +294,25 @@ The healthcheck eventually fails and Docker marks the container unhealthy, but s
 
 ---
 
-## [OPEN] ISSUE-8: No read-only root filesystem
+## [FIXED] ISSUE-8: No read-only root filesystem ✅ Fixed (T13 validated 2026-03-28)
 
 **Category:** Security — filesystem hardening
 **Severity:** Low-Medium
 **Discovered:** Design review
+**Fixed:** `read_only: true` added to docker-compose.yml with `/tmp` (tmpfs 256MB) and `/run` (tmpfs 32MB) mounts.
 
 **Description:**
 `ReadonlyRootfs: false` — container filesystem is writable. A read-only rootfs with `tmpfs` for `/tmp` and writable overlay for npm cache would reduce blast radius.
 
-**Challenge:** Node.js / npm require several writable paths. Needs careful `tmpfs` mapping.
+**Fix applied:**
+- `read_only: true` in docker-compose.yml
+- `/tmp` mounted as tmpfs (256MB, mode 1777) for temporary files and npm builds
+- `/run` mounted as tmpfs (32MB) for process runtime files
+- `GIT_CONFIG_GLOBAL=/home/node/.openclaw/.gitconfig` redirects git config to volume
+- `NPM_CONFIG_CACHE=/home/node/.openclaw/.npm-cache` redirects npm cache to volume
 
-**Action:** Test with `read_only: true` + appropriate tmpfs mounts.
+**T13 validation (2026-03-28):** 13/15 pass, 0 fail, 2 warn. All system paths read-only confirmed.
+System paths verified read-only: `/usr`, `/bin`, `/lib`, `/etc`, `/sbin`. npm install, git init+commit in workspace: all working. API key/ANTHROPIC creds not affected.
 
 ---
 

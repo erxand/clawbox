@@ -54,7 +54,7 @@ else
 fi
 
 # Are all common commands listed?
-for cmd in start stop restart status logs chat run ask task shell backup restore upgrade clean; do
+for cmd in start stop restart status logs chat run ask task task-status task-logs cancel shell backup restore upgrade clean; do
   if echo "$HELP_OUTPUT" | grep -q "^  $cmd"; then
     check "help lists '$cmd'" "pass" ""
   else

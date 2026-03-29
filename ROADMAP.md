@@ -283,7 +283,7 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 - **Verdict:** Isolation is clean. But clawbox does NOT handle true parallelism — concurrent requests queue, not interleave. For users expecting background parallelism (e.g. running two builds at once), this is a documentation gap. The behavior is actually safe, but should be explicitly documented.
 - **Next step:** ISSUE-30 below — document the sequential-session behavior and add a warning to the CLI if a second request arrives while one is in-flight.
 
-### T7 — UX / friction audit ✅ 2026-03-26
+### T7 — UX / friction audit ✅ 2026-03-26, re-run 2026-03-29
 Time how long it takes a hypothetical new dev to go from zero to running a task. Where do they get confused? What's the first thing that breaks? What docs are missing?
 
 **Results (2026-03-26):**
@@ -297,3 +297,11 @@ Time how long it takes a hypothetical new dev to go from zero to running a task.
 - ⚠ `clawbox status` didn't print the `ws://` URL for copy-paste — **fixed** (now shows connect hint)
 - ⚠ T7 test had a false-negative on `ask` alias detection (grep pattern wrong) — **fixed**
 - **Verdict:** Very strong UX baseline. No friction failures. The two fixes above (README + status) remove the last rough edges for new users.
+
+**Re-run (2026-03-29) — updated T7 to cover new commands:**
+- T7 test expanded: added `task-status`, `task-logs`, `cancel` to the help coverage checks (all added after 2026-03-26)
+- ✓ **40/40 pass, 0 warn, 0 fail** — perfect score
+- ✓ `cancel`, `task-status`, `task-logs` all present in help output
+- ✓ Container start: 8s, first agent response: 12s
+- ✓ All prior warn items (README commands, ws:// in status, `ask` alias) confirmed fixed and holding
+- **Verdict:** UX is clean end-to-end including all new commands from ISSUE-37/38/39/40. No remaining friction gaps.
