@@ -283,6 +283,22 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 - **Verdict:** Isolation is clean. But clawbox does NOT handle true parallelism — concurrent requests queue, not interleave. For users expecting background parallelism (e.g. running two builds at once), this is a documentation gap. The behavior is actually safe, but should be explicitly documented.
 - **Next step:** ISSUE-30 below — document the sequential-session behavior and add a warning to the CLI if a second request arrives while one is in-flight.
 
+### ISSUE-43: Task log overwritten by each new task ✅ Fixed 2026-03-29
+**Problem:** `~/.clawbox-task.log` was a single fixed path — every `clawbox task` call overwrote it. This destroyed history of previous tasks and caused T15 to read test 9's log (a trivial follow-up task) instead of the timeout test's log, making the result section useless.
+**Fix:** `cmd_task` now generates a timestamped log file (`~/.clawbox-task-YYYYMMDD-HHMMSS.log`) and updates a symlink `~/.clawbox-task.log` → latest. `task-logs`, `task-status`, and `cancel` all resolve the symlink. The actual timestamped path is printed in `clawbox task` output ("Log: /path/...") so tests and users can pin the exact file. T15 now captures this path and uses it throughout, so test 9 starting a new task no longer clobbers the analysis.
+
+### T15 — Task timeout + handoff ✅ 2026-03-29
+**Run 1 (2026-03-29 02:44):** 6/9 pass, 3 warn — timeout never triggered because gateway cold-start caused task to fail immediately ("gateway connect failed") and the agent "completed" in 0 seconds. Also: test 9 overwrote the task log (ISSUE-43), making all result sections read the wrong log.
+**Run 2 (2026-03-29 04:47 — after ISSUE-43 fix + T15 improvements):**
+- ✓ ISSUE-43 fixed: timestamped log path captured from `clawbox task` output; test 9's new task writes to a separate file
+- ✓ Timeout triggered after exactly 1 minute (confirmed: `=== TIMEOUT after 1m — sending handoff prompt ===`)
+- ✓ Gateway SIGUSR1 reload succeeded — fresh handoff session started cleanly
+- ✓ Handoff agent wrote comprehensive TASK.md update + committed WIP to git
+- ✓ Handoff response: 2306 bytes, high quality — specific file list, test results, git commits, resume instructions
+- ✓ Lock released cleanly after handoff; new task started immediately in test 9
+- ⚠ T15 test script killed by 320s exec timeout — handoff takes ~6 min total (1m task + gateway reload + ~5m handoff agent). Fixed: `MAX_WAIT` increased to 420s.
+- **Verdict:** Timeout + handoff mechanism confirmed working end-to-end. The agent is an excellent handoff writer — it explored the workspace, ran tests, committed WIP, and produced an actionable TASK.md. Phase 2 core feature is production-ready. ✅
+
 ### T7 — UX / friction audit ✅ 2026-03-26, re-run 2026-03-29
 Time how long it takes a hypothetical new dev to go from zero to running a task. Where do they get confused? What's the first thing that breaks? What docs are missing?
 

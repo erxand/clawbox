@@ -22,7 +22,10 @@ GATEWAY_TOKEN="clawbox"
 CONTAINER="clawbox-work"
 TASKS_FILE="$HOME/.clawbox-tasks"
 LOCK_FILE="$HOME/.clawbox-lock"
-TASK_LOG="$HOME/.clawbox-task.log"
+TASK_LOG_LINK="$HOME/.clawbox-task.log"  # symlink → latest timestamped log
+# TASK_LOG is set per-task to a timestamped file (ISSUE-43); use TASK_LOG_LINK for
+# commands that read the "most recent" log (task-status, task-logs, cancel).
+TASK_LOG="$TASK_LOG_LINK"  # backward-compat fallback; overridden in cmd_task
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
@@ -439,14 +442,16 @@ cmd_cp() {
 }
 
 cmd_task() {
-  # clawbox task [--context <path>] [--thinking <level>] [--session <name>] "description"
+  # clawbox task [--context <path>] [--thinking <level>] [--session <name>] [--timeout <min>] "description"
   # Runs a task in the background; supports the same flags as `run`.
   # --context <path>    Attach file/dir as context (same as run --context)
   # --thinking <level>  Thinking level: off|minimal|low|medium|high|xhigh
   # --session <name>    Named session for conversation continuity
+  # --timeout <min>     Kill agent after N minutes and send handoff prompt (0 = no timeout)
   local context_path=""
   local thinking_level=""
   local session_key=""
+  local timeout_min=0
   local desc=""
 
   while [[ $# -gt 0 ]]; do
@@ -475,6 +480,14 @@ cmd_task() {
         fi
         shift 2
         ;;
+      --timeout|-t)
+        timeout_min="${2:-}"
+        if [ -z "$timeout_min" ] || ! [[ "$timeout_min" =~ ^[0-9]+$ ]]; then
+          echo "Usage: clawbox task --timeout <minutes> \"description\""
+          exit 1
+        fi
+        shift 2
+        ;;
       *)
         desc="${1:-}"
         shift
@@ -483,7 +496,7 @@ cmd_task() {
   done
 
   if [ -z "$desc" ]; then
-    echo "Usage: clawbox task [--context <path>] [--thinking <level>] [--session <name>] \"description\""
+    echo "Usage: clawbox task [--context <path>] [--thinking <level>] [--session <name>] [--timeout <min>] \"description\""
     exit 1
   fi
 
@@ -541,6 +554,15 @@ cmd_task() {
   [ -n "$thinking_level" ] && agent_args+=(--thinking "$thinking_level")
   [ -n "$session_key" ]    && agent_args+=(--session-id "$session_key")
 
+  # ISSUE-43: use a timestamped log file; update the symlink to point to it.
+  local log_ts
+  log_ts=$(date +%Y%m%d-%H%M%S)
+  local task_log_file="$HOME/.clawbox-task-${log_ts}.log"
+  # Update symlink atomically so task-logs/task-status always read the latest
+  ln -sf "$task_log_file" "$TASK_LOG_LINK"
+  # Export the path so cmd_cancel's appending works when lock is still held
+  TASK_LOG="$task_log_file"
+
   # Run in background, redirect output to log file so it doesn't bleed to terminal (ISSUE-36)
   (
     acquire_lock
@@ -550,18 +572,93 @@ cmd_task() {
       echo "Description: ${desc:0:200}"
       [ $context_file_count -gt 0 ] && echo "Context files: $context_file_count"
       [ -n "$session_key" ] && echo "Session: $session_key"
+      [ "$timeout_min" -gt 0 ] && echo "Timeout: ${timeout_min}m"
       echo ""
-      OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
-        openclaw agent --agent main ${agent_args[@]+"${agent_args[@]}"} -m "$desc"
-      echo ""
-      echo "=== Task completed: $(date '+%Y-%m-%d %H:%M:%S') ==="
-    } > "$TASK_LOG" 2>&1
+
+      # Run agent, optionally with a wall-clock timeout (ISSUE-42)
+      # macOS doesn't ship `timeout` (GNU coreutils); use a watchdog subshell instead.
+      # Note: we're inside a background (subshell), not a function — use plain vars.
+      timed_out=0
+      if [ "$timeout_min" -gt 0 ]; then
+        timeout_secs=$(( timeout_min * 60 ))
+        # Spawn agent in background, capture its PID
+        OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
+          openclaw agent --agent main ${agent_args[@]+"${agent_args[@]}"} -m "$desc" &
+        agent_pid=$!
+        # Watchdog: sleep timeout_secs, then kill the agent if still running
+        ( sleep "$timeout_secs"
+          if kill -0 "$agent_pid" 2>/dev/null; then
+            kill -TERM "$agent_pid" 2>/dev/null
+            sleep 3
+            kill -0 "$agent_pid" 2>/dev/null && kill -KILL "$agent_pid" 2>/dev/null || true
+          fi
+        ) &
+        watchdog_pid=$!
+        # Wait for agent; suppress set -e on failure to capture timed_out correctly
+        agent_wait_ok=1
+        wait "$agent_pid" 2>/dev/null || agent_wait_ok=0
+        if [ "$agent_wait_ok" -eq 0 ]; then
+          # Agent exited non-zero; if watchdog is still alive it means watchdog killed it
+          if kill -0 "$watchdog_pid" 2>/dev/null; then
+            timed_out=1
+          fi
+        fi
+        # Kill watchdog if agent finished first (normal completion)
+        kill "$watchdog_pid" 2>/dev/null || true
+        wait "$watchdog_pid" 2>/dev/null || true
+      else
+        OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
+          openclaw agent --agent main ${agent_args[@]+"${agent_args[@]}"} -m "$desc"
+      fi
+
+      # Handoff prompt on timeout (ISSUE-42): ask agent to summarise and update TASK.md
+      if [ "$timed_out" -eq 1 ]; then
+        echo ""
+        echo "=== TIMEOUT after ${timeout_min}m — sending handoff prompt ==="
+        # Use a fresh session for the handoff to avoid connecting to a broken/mid-turn
+        # session state left by the killed agent process. The handoff session reads the
+        # container workspace (TASK.md, git log) and writes a clean summary.
+        handoff_session="handoff-$(date +%s)"
+        handoff_msg="HANDOFF TASK: The previous agent session was stopped after ${timeout_min} minutes. Please do the following:
+1. Look at the workspace in /home/node/.openclaw/workspace/ — find any project directories and TASK.md files.
+2. Write or update TASK.md in the most recent project directory with:
+   - What was completed (based on files present and git log)
+   - What still needs to be done
+   - The exact next step to continue
+3. Commit any uncommitted work with git (run 'git -C <project-dir> add -A && git -C <project-dir> commit -m \"WIP: timeout checkpoint\"' if there are uncommitted files).
+4. Write a brief progress summary to stdout.
+
+This is a handoff checkpoint — make TASK.md accurate so the next session can resume immediately."
+        echo ""
+        echo "--- Handoff response ---"
+        # The timed-out agent left the container gateway mid-turn (WebSocket dropped).
+        # Send SIGUSR1 to the gateway process to reload it, then wait for it to come back.
+        # This avoids a full container restart while clearing the stuck session state.
+        gateway_pid=$(docker exec "$CONTAINER" sh -c "pgrep openclaw-gateway | head -1" 2>/dev/null || true)
+        if [ -n "$gateway_pid" ]; then
+          docker exec "$CONTAINER" kill -USR1 "$gateway_pid" 2>/dev/null || true
+          sleep 8  # Wait for gateway to reload
+        else
+          sleep 5
+        fi
+        OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
+          openclaw agent --agent main --session-id "$handoff_session" -m "$handoff_msg" || true
+        echo ""
+        echo "=== Handoff complete: $(date '+%Y-%m-%d %H:%M:%S') ==="
+        echo "=== Resume with: clawbox task --session <name> \"continue from TASK.md\" ==="
+      else
+        echo ""
+        echo "=== Task completed: $(date '+%Y-%m-%d %H:%M:%S') ==="
+      fi
+    } > "$task_log_file" 2>&1
     release_lock
   ) &
   echo "▶ Task started in background."
   [ -n "$session_key" ] && echo "  Session: $session_key"
   [ $context_file_count -gt 0 ] && echo "  Context: $context_file_count file(s) from $context_path"
-  echo "  Output:  clawbox task-logs   (tail -f the log)"
+  [ "$timeout_min" -gt 0 ] && echo "  Timeout: ${timeout_min}m (handoff prompt sent on expiry)"
+  echo "  Log:     $task_log_file"
+  echo "  Output:  clawbox task-logs   (tail -f the latest log)"
   echo "  Status:  clawbox task-status (full status + history)"
 }
 
@@ -578,11 +675,13 @@ cmd_task_status() {
   fi
 
   # Show last background task log (ISSUE-36: agent output redirect)
-  if [ -f "$TASK_LOG" ]; then
+  if [ -f "$TASK_LOG_LINK" ]; then
+    local resolved_log
+    resolved_log=$(readlink "$TASK_LOG_LINK" 2>/dev/null || echo "$TASK_LOG_LINK")
     echo "=== Last background task output (tail -30) ==="
-    tail -30 "$TASK_LOG"
+    tail -30 "$resolved_log"
     echo ""
-    echo "Full log: $TASK_LOG"
+    echo "Full log: $resolved_log"
     echo ""
   fi
 
@@ -601,14 +700,17 @@ cmd_task_status() {
 
 cmd_task_logs() {
   # Live-tail the background task log (ISSUE-36 follow-up: make live output easy to access)
-  if [ ! -f "$TASK_LOG" ]; then
-    echo "No background task log found at $TASK_LOG"
+  if [ ! -f "$TASK_LOG_LINK" ]; then
+    echo "No background task log found at $TASK_LOG_LINK"
     echo "Start a task first: clawbox task \"description\""
     exit 1
   fi
-  echo "▶ Tailing $TASK_LOG (Ctrl+C to stop)..."
+  # Resolve symlink to show the actual file (ISSUE-43)
+  local resolved_log
+  resolved_log=$(readlink "$TASK_LOG_LINK" 2>/dev/null || echo "$TASK_LOG_LINK")
+  echo "▶ Tailing $resolved_log (Ctrl+C to stop)..."
   echo ""
-  tail -f "$TASK_LOG"
+  tail -f "$resolved_log"
 }
 
 cmd_cancel() {
@@ -664,10 +766,14 @@ cmd_cancel() {
     fi
   fi
 
-  # Append cancellation marker to log
-  if [ -f "$TASK_LOG" ]; then
-    echo "" >> "$TASK_LOG"
-    echo "=== Task cancelled by user: $(date '+%Y-%m-%d %H:%M:%S') ===" >> "$TASK_LOG"
+  # Append cancellation marker to log (ISSUE-43: resolve symlink first)
+  local cancel_log="$TASK_LOG_LINK"
+  if [ -L "$TASK_LOG_LINK" ]; then
+    cancel_log=$(readlink "$TASK_LOG_LINK" 2>/dev/null || echo "$TASK_LOG_LINK")
+  fi
+  if [ -f "$cancel_log" ]; then
+    echo "" >> "$cancel_log"
+    echo "=== Task cancelled by user: $(date '+%Y-%m-%d %H:%M:%S') ===" >> "$cancel_log"
   fi
 
   echo "✓ Task cancelled."
@@ -750,6 +856,7 @@ Commands:
   task --context <path> "desc"  Background task with file/dir context
   task --thinking <level> "desc"  Background task with thinking level
   task --session <name> "desc"  Background task in a named session
+  task --timeout <min> "desc"  Kill agent after N minutes; send handoff prompt to update TASK.md
   task-status        Check background task progress + last task output
   task-logs          Live tail of background task output (tail -f ~/.clawbox-task.log)
   cancel             Cancel the currently running background task
