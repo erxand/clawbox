@@ -316,7 +316,7 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - ⚠️ `clawbox task` took 13s to "return" in test — because the agent ran so fast (simple task), it actually completed before the 5s threshold. True long tasks would return immediately. This is expected behavior for fast tasks.
 - **Verdict:** Background task mode is functional. ISSUE-36 is the only real bug, now fixed. ✅
 
-### T6 — Concurrent task handling ✅ 2026-03-26
+### T6 — Concurrent task handling ✅ 2026-03-26, re-run 2026-03-29
 Run two separate `clawbox run` commands simultaneously pointing at different workspaces. Do they interfere? Are sessions properly isolated?
 
 **Results (2026-03-26):**
@@ -328,6 +328,16 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 - ⚠️ The 2-second stagger between requests means task B waited for task A to complete before starting — this is the main finding
 - **Verdict:** Isolation is clean. But clawbox does NOT handle true parallelism — concurrent requests queue, not interleave. For users expecting background parallelism (e.g. running two builds at once), this is a documentation gap. The behavior is actually safe, but should be explicitly documented.
 - **Next step:** ISSUE-30 below — document the sequential-session behavior and add a warning to the CLI if a second request arrives while one is in-flight.
+
+**Re-run (2026-03-29) — ISSUE-30/37 lock behavior added to T6 — 17/20 pass, 0 fail:**
+- ✓ Part 1 (raw gateway): Both tasks complete (A: 63s, B: 124s wall time), both test suites pass (14/14 math, 22/22 strings), zero real cross-contamination
+- ✓ Part 2 (lock): `clawbox run` exits 1 with actionable message ("⏳ Another Clawbox task is already running") when lock held
+- ✓ Blocked message shows `clawbox task-status`, `clawbox task-logs`, `clawbox cancel` — first-class UX
+- ✓ Lock released after normal `clawbox run` completes (no stale lock left)
+- ✓ Stale lock (dead PID 99999999) auto-cleaned — `clawbox run` succeeds past it
+- ✓ `clawbox task` also exits 1 when lock is held (not just `run`)
+- 3 warns were test script false-positives: "add"/"subtract" in agent prose matched cross-contamination regex; `grep -c || echo 0` double-output bug. Both fixed in test script.
+- **Verdict:** Lock mechanism works end-to-end. ISSUE-30/37 confirmed working post-fix. ✅
 
 ### ISSUE-46: Workspace pollution from previous test runs causes T3 to pick wrong TASK.md ✅ Fixed 2026-03-29
 **Problem:** The container workspace accumulates project directories from T1, T2, T5, T15 and other tests (bookstore-api-v2, blog-api-timeout-test, task-app, taskman-*, etc.). T3's `find -newer` heuristic was still unreliable because the session 1 agent would sometimes `ls` or touch files in old directories, refreshing their mtime and defeating the sentinel-based filter. The `-newer` fallback `xargs ls -t | head -1` would then return a stale project's TASK.md.
