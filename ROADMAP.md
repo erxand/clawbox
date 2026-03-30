@@ -16,7 +16,7 @@
 - **Note:** Test script rewritten from `eval`-based unit tests (fragile, broke with complex quoting in cmd_run) to behavioral live-container tests. More reliable and tests actual behavior end-to-end.
 - **Verdict:** Context injection confirmed working across all modes. ✅
 
-### T2 — Context window stress (2026-03-26, re-run 2026-03-28)
+### T2 — Context window stress (2026-03-26, re-run 2026-03-28, re-run 2026-03-30)
 
 **Run 1 (2026-03-26):**
 - ✓ Agent navigated 141-file Express.js codebase selectively (no context overload)
@@ -24,6 +24,14 @@
 - ✓ Completed in 196s (~3 min), no timeout
 - ⚠️ Agent modified `node_modules/router/index.js` instead of Express's own `lib/router/index.js` — found the vendored dependency, not the actual source file. Task succeeded but in a slightly wrong location.
 - ⚠️ `ROUTER_STATS_SUMMARY.md` auto-created but not explicitly asked for — agent gold-plates a bit
+
+**Run 3 (2026-03-30) — stability check post all ISSUE-44/47/48 fixes:**
+- ✓ test-router-stats.js created in express-oss/ ✓
+- ✓ stats() added to CORRECT file (lib/router/index.js wrapper, not node_modules/router/)
+- ✓ node_modules/router/ not modified (correct)
+- ✓ 5/5 tests passing, completed in 257s (~4 min)
+- ✓ Agent correctly reasoned through Express 5.x's dependency structure and created a lib/router/ wrapper
+- **Verdict:** T2 fully stable after all recent changes. Agent codebase navigation remains strong. ✅
 
 **Run 2 (2026-03-28) — hint-guided re-run:**
 - Task message updated to explicitly say "look in lib/, not node_modules/"
