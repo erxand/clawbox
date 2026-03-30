@@ -163,8 +163,19 @@ TESTS_PASSING="unknown"
 if [ -n "$PROJECT_DIR" ]; then
   TEST_OUTPUT=$(docker exec "$CONTAINER" sh -c "cd '$PROJECT_DIR' && npm test 2>&1 | tail -20" 2>/dev/null || echo "(test run failed)")
   TEST_RESULTS="$TEST_OUTPUT"
-  # Check if tests passed (look for common pass indicators)
-  if echo "$TEST_OUTPUT" | grep -qiE '(passing|tests passed|all.*pass|✓|✗.*0)'; then
+  # Check if tests passed — check failures FIRST (higher precedence)
+  # Catch "Failed: N" (N > 0), "X failing", or "X failed" patterns
+  if echo "$TEST_OUTPUT" | grep -qiE 'Failed: [1-9]|[1-9][0-9]* (failing|failed)'; then
+    # Extract pass/fail counts for a descriptive partial-pass value
+    PASS_COUNT=$(echo "$TEST_OUTPUT" | grep -oiE 'Passed: [0-9]+' | grep -oE '[0-9]+' | head -1 || echo "")
+    FAIL_COUNT=$(echo "$TEST_OUTPUT" | grep -oiE 'Failed: [0-9]+' | grep -oE '[0-9]+' | head -1 || echo "")
+    TOTAL_COUNT=$((${PASS_COUNT:-0} + ${FAIL_COUNT:-1}))
+    if [ -n "$PASS_COUNT" ] && [ -n "$FAIL_COUNT" ]; then
+      TESTS_PASSING="partial (${PASS_COUNT}/${TOTAL_COUNT})"
+    else
+      TESTS_PASSING="no"
+    fi
+  elif echo "$TEST_OUTPUT" | grep -qiE '(passing|tests passed|all.*pass|Passed: [1-9])'; then
     TESTS_PASSING="yes"
   elif echo "$TEST_OUTPUT" | grep -qiE '(failing|failed|error)'; then
     TESTS_PASSING="no"
@@ -221,7 +232,7 @@ $GIT_LOG
 ## Assessment
 $([ "$TASK_MD_FOUND" = "yes" ] && echo "✓ Agent used TASK.md for progress tracking" || echo "✗ Agent did NOT use TASK.md")
 $([ "$GIT_COMMITS" -gt 0 ] 2>/dev/null && echo "✓ Agent made $GIT_COMMITS git commits" || echo "✗ Agent made no git commits")
-$([ "$TESTS_PASSING" = "yes" ] && echo "✓ Tests passing" || echo "⚠ Tests status: $TESTS_PASSING")
+$([ "$TESTS_PASSING" = "yes" ] && echo "✓ Tests passing" || ([ "$TESTS_PASSING" = "no" ] && echo "✗ Tests failing" || echo "⚠ Tests partial: $TESTS_PASSING"))
 $([ "$SERVER_ALIVE" = "yes" ] && echo "✓ HTTP server responding on at least one port" || echo "✗ No HTTP server detected on ports 3000/3001/8080")
 $([ "$CURL_3000" != "0" ] && echo "✓ Port 3000: HTTP $CURL_3000 (path: $PATH_3000)" || echo "⚠ Port 3000: no response (server may have stopped after test run)")
 $([ "$CURL_3001" != "0" ] && echo "✓ Port 3001: HTTP $CURL_3001 (path: $PATH_3001)" || echo "⚠ Port 3001: no response")
