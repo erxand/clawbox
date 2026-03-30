@@ -374,6 +374,13 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 **Symptom:** T3 run on 2026-03-30 showed agent correctly completing all CRUD endpoints (TASK.md confirmed, git commit `95a9b36` with "Add CRUD endpoints: GET /books/:id, POST /books, DELETE /books/:id with validation") but assessment showed `✗ Agent failed to continue properly` because endpoint verification got FAIL for all.
 **Fix:** (1) Server restart now uses `npm start` first (reads `package.json` `scripts.start`), falling back to `index.js`, `src/index.js`, `server.js`. (2) Added secondary assessment signal: if TASK.md shows POST /books as `[x]` completed, report `⚠ Agent continued (TASK.md shows work done) but endpoint verification failed — server restart issue` instead of false `✗ failed`. This separates agent continuity failures from test infrastructure failures.
 
+**Run 9 (2026-03-30 04:41) — ISSUE-47 fix validated:**
+- ✓ Session 1: `bookstore-20260330-044116` created, TASK.md at correct path (127s)
+- ✓ Session 2: Agent resumed, added GET /books/:id, POST /books, DELETE /books/:id, 10/10 tests passing (218s)
+- ✓ Endpoints: GET /books ✓ (returns JSON array), GET /books/1 ✓, POST /books ✓ (validation error on empty body = correct), DELETE /books/1 ✓
+- ✓ Assessment: ✓/✓ — `npm start` correctly found `server.js`, all endpoints verified
+- **Verdict:** ISSUE-47 confirmed fixed. T3 is reliable end-to-end. ✅
+
 ### ISSUE-46: Workspace pollution from previous test runs causes T3 to pick wrong TASK.md ✅ Fixed 2026-03-29
 **Problem:** The container workspace accumulates project directories from T1, T2, T5, T15 and other tests (bookstore-api-v2, blog-api-timeout-test, task-app, taskman-*, etc.). T3's `find -newer` heuristic was still unreliable because the session 1 agent would sometimes `ls` or touch files in old directories, refreshing their mtime and defeating the sentinel-based filter. The `-newer` fallback `xargs ls -t | head -1` would then return a stale project's TASK.md.
 **Fix:** (1) T3 now cleans the workspace at the start of each run — removes all subdirectories except `.git`, `.openclaw`, and `memory`. Seed files at root (AGENTS.md, SOUL.md, etc.) are preserved. (2) T3 uses a unique project name per run (`bookstore-YYYYMMDD-HHMMSS`) and tells the agent the exact directory to use. TASK.md detection is now deterministic: look in `$WORKSPACE/$PROJECT_NAME/TASK.md` first, fall back to full search only if not found.
