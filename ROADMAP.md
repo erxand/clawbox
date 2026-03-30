@@ -298,7 +298,19 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - **Findings:** (1) Agent is an optimist: self-reports success before fully verifying; (2) Shared server state between test suites is a common gotcha — agent's workaround was reasonable but execution was fragile; (3) The T5 test script correctly caught the discrepancy (test pass/fail blocks).
 - **Verdict:** T5 scaffold fix confirmed working. ISSUE-44 rate-limit detection fix also confirmed (run was not rate-limited this time). Agent produced high-quality middleware code but left a 1-test regression. Score: 4/4 assessment checks pass, but 13/14 actual tests. Solid performance; the failure mode is instructive. ✅
 
-### T14 — Multi-error recovery (2026-03-28) ✅
+### T14 — Multi-error recovery (2026-03-28, re-run 2026-03-30) ✅
+
+**Re-run (2026-03-30 06:41) — stability check after all recent CLI changes:**
+- ✓ 5/6 pass, 0 fail, 1 warn (same pattern as original run)
+- ✓ Syntax error (missing `});`) fixed correctly
+- ✓ Wrong import path (`./helpers` → `./utils`) fixed correctly
+- ✓ Missing function (`subtract()` added to utils.js) — correct implementer-not-deleter behavior
+- ✓ All 3 tests passing, server starts cleanly
+- ✓ Completed in 93s (down from 132s on original run — agent is getting faster)
+- ⚠ Same false-positive warn: grep timing issue on `helpers` string check
+- **Verdict:** T14 stable across all recent changes. Error recovery performance holding strong. ✅
+
+**Original run (2026-03-28):**
 
 **Errors introduced simultaneously:**
 1. Syntax error: missing closing `});` in `server.js` app.get handler
@@ -339,6 +351,24 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - ⚠️ **ISSUE-36 found:** Agent output bled to terminal — background subshell inherited stdout. Fixed: output now redirected to `~/.clawbox-task.log`. `task-status` shows last 30 lines of log.
 - ⚠️ `clawbox task` took 13s to "return" in test — because the agent ran so fast (simple task), it actually completed before the 5s threshold. True long tasks would return immediately. This is expected behavior for fast tasks.
 - **Verdict:** Background task mode is functional. ISSUE-36 is the only real bug, now fixed. ✅
+
+### T9 — Output modes (2026-03-27, re-run 2026-03-30) ✅
+**Re-run (2026-03-30 06:40) — stability check after ISSUE-44 (rate-limit detection added to `clawbox run`):**
+- ✓ **18/18 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ `--quiet` / `-q`: response on stdout, no banners
+- ✓ `--json` / `-j`: valid JSON with all 4 keys (`response`, `elapsed_ms`, `timestamp`, `context_files`)
+- ✓ `--json + --context`: `context_files=2` correctly reported
+- ✓ Live e2e: quiet + json modes confirmed against running container
+- **Verdict:** Output modes fully stable after all recent CLI changes. ✅
+
+### T10 — Session naming (2026-03-27, re-run 2026-03-30) ✅
+**Re-run (2026-03-30 06:41) — stability check:**
+- ✓ **10/10 pass, 1 warn, 0 fail** — same result as original
+- ✓ `--session`/`-s`: flag accepted, `--session-id` wired to agent
+- ✓ `--json + --session`: `session` key in JSON output
+- ✓ Live continuity: session A recalled `ZEBRA42` across two calls
+- ⚠ Session isolation: shared agent memory by design (known behavior, documented)
+- **Verdict:** Session naming fully stable. ✅
 
 ### T6 — Concurrent task handling ✅ 2026-03-26, re-run 2026-03-29
 Run two separate `clawbox run` commands simultaneously pointing at different workspaces. Do they interfere? Are sessions properly isolated?
