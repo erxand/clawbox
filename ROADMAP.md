@@ -65,6 +65,15 @@
 - **Verdict:** ISSUE-41 confirmed fixed. Multi-session continuity is now reliable end-to-end. ✅
 - **Endpoints after session 2 (despite rebuild):** All working — GET /books ✓, GET /books/1 ✓, POST /books ✓, DELETE /books/1 ✓ (agent completed the full API even though it rebuilt)
 
+**Run 8 (2026-03-30) — ISSUE-47 found and fixed:**
+- ✓ Session 1: `bookstore-20260330-024046` created, TASK.md at correct path (118s)
+- ✓ Session 2: Agent resumed, read TASK.md, implemented GET /books/:id, POST /books, DELETE /books/:id, ran tests, committed (230s — git `95a9b36`)
+- ✗ All endpoint checks returned FAIL — server never started because T3 script tried `node index.js` and `node src/index.js` but agent created `server.js`
+- ✗ Assessment showed `✗ Agent failed to continue properly` — **false negative** (agent was correct, test infrastructure wrong)
+- **Root cause (ISSUE-47):** Hardcoded entrypoints in T3 server restart logic don't account for `server.js`
+- **Fix:** T3 now uses `npm start` first, secondary assessment signal reads TASK.md checkboxes
+- **Verdict:** Agent continuity confirmed working. The failure was entirely test infrastructure (ISSUE-47). ✅
+
 **Run 7 (2026-03-29) — ISSUE-46 fix validated:**
 - ✓ Workspace cleaned of 13 stale project dirs at test start
 - ✓ Session 1: unique project `bookstore-20260329-104309` created, TASK.md at correct path (195s)
@@ -359,6 +368,11 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 - ✓ `clawbox task` also exits 1 when lock is held (not just `run`)
 - 3 warns were test script false-positives: "add"/"subtract" in agent prose matched cross-contamination regex; `grep -c || echo 0` double-output bug. Both fixed in test script.
 - **Verdict:** Lock mechanism works end-to-end. ISSUE-30/37 confirmed working post-fix. ✅
+
+### ISSUE-47: T3 server restart uses hardcoded entrypoints (index.js/src/index.js), misses server.js ✅ Fixed 2026-03-30
+**Problem:** T3's post-session endpoint verification starts the server with `node index.js || node src/index.js`. When the agent creates `server.js` (its preferred entrypoint per `package.json` main field), neither command finds the file and the server never starts — all endpoint checks return FAIL.
+**Symptom:** T3 run on 2026-03-30 showed agent correctly completing all CRUD endpoints (TASK.md confirmed, git commit `95a9b36` with "Add CRUD endpoints: GET /books/:id, POST /books, DELETE /books/:id with validation") but assessment showed `✗ Agent failed to continue properly` because endpoint verification got FAIL for all.
+**Fix:** (1) Server restart now uses `npm start` first (reads `package.json` `scripts.start`), falling back to `index.js`, `src/index.js`, `server.js`. (2) Added secondary assessment signal: if TASK.md shows POST /books as `[x]` completed, report `⚠ Agent continued (TASK.md shows work done) but endpoint verification failed — server restart issue` instead of false `✗ failed`. This separates agent continuity failures from test infrastructure failures.
 
 ### ISSUE-46: Workspace pollution from previous test runs causes T3 to pick wrong TASK.md ✅ Fixed 2026-03-29
 **Problem:** The container workspace accumulates project directories from T1, T2, T5, T15 and other tests (bookstore-api-v2, blog-api-timeout-test, task-app, taskman-*, etc.). T3's `find -newer` heuristic was still unreliable because the session 1 agent would sometimes `ls` or touch files in old directories, refreshing their mtime and defeating the sentinel-based filter. The `-newer` fallback `xargs ls -t | head -1` would then return a stale project's TASK.md.

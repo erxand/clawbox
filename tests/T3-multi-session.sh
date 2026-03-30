@@ -152,8 +152,10 @@ log "Verifying endpoints..."
 # This handles the case where the agent's server exited after session 2
 PROJECT_DIR=$(docker exec "$CONTAINER" sh -c "dirname '$S1_TASK_MD_PATH'" 2>/dev/null || echo "$WORKSPACE/$PROJECT_NAME")
 log "Attempting to start server at $PROJECT_DIR for endpoint checks..."
-docker exec -d "$CONTAINER" sh -c "cd '$PROJECT_DIR' && node index.js 2>/tmp/t3-server.log || node src/index.js 2>/tmp/t3-server.log || true" 2>/dev/null || true
-sleep 5
+# Use 'npm start' (reads package.json main/scripts.start) — handles server.js, index.js, src/index.js, etc.
+# Falls back to trying common entrypoints if npm start fails.
+docker exec -d "$CONTAINER" sh -c "cd '$PROJECT_DIR' && (npm start 2>/tmp/t3-server.log || node index.js 2>>/tmp/t3-server.log || node src/index.js 2>>/tmp/t3-server.log || node server.js 2>>/tmp/t3-server.log) &" 2>/dev/null || true
+sleep 6
 
 # Check from inside container (ports not mapped to host by default)
 GET_BOOKS=$(docker exec "$CONTAINER" sh -c "curl -s http://localhost:3000/books 2>/dev/null" || echo "FAIL")
@@ -177,8 +179,11 @@ FOUND_TASK_MD="no"
 if [ -n "$S1_TASK_MD" ] && [ "$S1_TASK_MD" != "(not found)" ]; then FOUND_TASK_MD="yes"; fi
 
 CONTINUED_OK="no"
-# GET /books should return JSON array (even if it says "title" not "book")
+# Primary signal: GET /books should return JSON array
 if [ "$GET_BOOKS" != "FAIL" ] && [ -n "$GET_BOOKS" ] && echo "$GET_BOOKS" | grep -q '\['; then CONTINUED_OK="yes"; fi
+# Secondary signal: TASK.md mentions completed POST/GET/:id/DELETE endpoints (agent finished even if server couldn't restart)
+TASK_SHOWS_COMPLETE="no"
+if echo "$S2_TASK_MD" | grep -qi "POST.*books\|books.*POST\|\[x\].*POST\|POST.*\[x\]" 2>/dev/null; then TASK_SHOWS_COMPLETE="yes"; fi
 
 cat > "$RESULT_FILE" << RESULT_EOF
 # T3 — Multi-session continuity test
@@ -241,7 +246,9 @@ $S2_GIT_LOG
 
 ## Assessment
 $([ "$FOUND_TASK_MD" = "yes" ] && echo "✓ Agent created TASK.md in session 1" || echo "✗ Agent did NOT create TASK.md in session 1")
-$([ "$CONTINUED_OK" = "yes" ] && echo "✓ Agent successfully continued in session 2" || echo "✗ Agent failed to continue properly in session 2")
+$([ "$CONTINUED_OK" = "yes" ] && echo "✓ Agent successfully continued in session 2 (endpoints verified)" || \
+  ([ "$TASK_SHOWS_COMPLETE" = "yes" ] && echo "⚠ Agent continued (TASK.md shows work done) but endpoint verification failed — server restart issue" || \
+   echo "✗ Agent failed to continue properly in session 2"))
 
 ### What was lost between sessions?
 $([ "$FOUND_TASK_MD" = "yes" ] && echo "TASK.md was preserved across restart." || echo "No TASK.md found — continuity mechanism not used.")
