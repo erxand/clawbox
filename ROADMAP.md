@@ -420,6 +420,39 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 - 3 warns were test script false-positives: "add"/"subtract" in agent prose matched cross-contamination regex; `grep -c || echo 0` double-output bug. Both fixed in test script.
 - **Verdict:** Lock mechanism works end-to-end. ISSUE-30/37 confirmed working post-fix. ✅
 
+### `clawbox doctor` — self-diagnostic command ✅ Added 2026-03-30
+
+**What:** New `clawbox doctor` command that runs a comprehensive self-diagnostic and prints a clear pass/warn/fail report. Useful for debugging "why isn't clawbox working?" without digging into logs manually.
+
+**Checks performed (21 total):**
+- Prerequisites: docker, docker daemon, docker compose v2, openclaw CLI, nc
+- Project directory: docker-compose.yml, Dockerfile, seed/AGENTS.md
+- Container: running state, health status, read-only rootfs, memory limit
+- Gateway: port 18790 reachable, gateway health endpoint
+- Lock / task state: stale lock detection, task log symlink validity
+- Workspace: file count, disk usage, AGENTS.md in container
+- Host disk: available GB, Docker disk usage summary
+
+**Output example (healthy):**
+```
+🩺 Clawbox Doctor
+════════════════════════════════════════
+  ✓ All checks pass — clawbox looks healthy!
+  Pass: 21   Warn: 0   Fail: 0   (of 21 checks)
+```
+
+**Output example (stopped container):**
+```
+  ✗ container clawbox-work does not exist — run: clawbox start
+  ✗ port 18790 is not reachable — container may not be running
+  ✗ gateway health: unreachable — run: clawbox logs
+  ✗ 3 critical issue(s) found
+```
+
+**Exit codes:** 0 = all critical checks pass; 1 = at least one ✗ failure.
+
+**Bug fixed during implementation:** Gateway health inner `&&/||` captured openclaw stdout into the result variable, making string equality fail even when gateway was healthy. Fixed by using `if openclaw ... >/dev/null; then` instead.
+
 ### ISSUE-48: T1 test pass/fail detection false-positive when partial tests fail ✅ Fixed 2026-03-30
 **Problem:** T1's `TESTS_PASSING` detection checked for `✓` symbols before checking for `Failed: N`. Because passing tests are listed one-by-one with `✓` before the final summary line, the grep matched `✓` first and returned `yes` even when `Failed: 1` appeared at the end of the output. Run 5 (2026-03-30) had 19/20 tests passing but was reported as `Tests passing: yes` in the result file.
 **Fix:** Test pass/fail detection now checks `Failed: [1-9]` FIRST. On partial pass, reports `partial (N/M)` instead of `yes`. Assessment block updated: `✗ Tests failing` for complete failure, `⚠ Tests partial: N/M` for partial. The `✓` check is still used as a positive indicator but only when no failures are detected.

@@ -865,6 +865,308 @@ cmd_install() {
   echo "✓ Installed. Run: clawbox help"
 }
 
+cmd_doctor() {
+  # Comprehensive self-diagnostic — checks prerequisites, container health,
+  # gateway reachability, disk/memory, and common config issues.
+  # Exit 0 if all critical checks pass; exit 1 if any critical check fails.
+  local PASS=0 WARN=0 FAIL=0
+
+  _doc_pass() { echo "  ✓ $*"; PASS=$((PASS+1)); }
+  _doc_warn() { echo "  ⚠ $*"; WARN=$((WARN+1)); }
+  _doc_fail() { echo "  ✗ $*"; FAIL=$((FAIL+1)); }
+
+  echo ""
+  echo "🩺 Clawbox Doctor"
+  echo "════════════════════════════════════════"
+  echo ""
+
+  # ── 1. Prerequisites ─────────────────────────────────────────────
+  echo "── Prerequisites ──"
+
+  # docker
+  if command -v docker &>/dev/null; then
+    local docker_ver
+    docker_ver=$(docker --version 2>/dev/null | head -1 || echo "unknown")
+    _doc_pass "docker present: $docker_ver"
+  else
+    _doc_fail "docker not found — install Docker Desktop or Docker Engine"
+  fi
+
+  # docker daemon running
+  if docker info &>/dev/null 2>&1; then
+    _doc_pass "docker daemon is running"
+  else
+    _doc_fail "docker daemon is not running — start Docker Desktop or run: sudo systemctl start docker"
+  fi
+
+  # docker compose (v2 plugin or standalone)
+  if docker compose version &>/dev/null 2>&1; then
+    _doc_pass "docker compose (v2) available"
+  elif command -v docker-compose &>/dev/null; then
+    _doc_warn "only docker-compose (v1) found — recommend Docker Compose v2 (docker compose)"
+  else
+    _doc_fail "docker compose not found — install Docker Compose"
+  fi
+
+  # openclaw CLI
+  if command -v openclaw &>/dev/null; then
+    local oc_ver
+    oc_ver=$(openclaw --version 2>/dev/null | head -1 || echo "unknown")
+    _doc_pass "openclaw CLI present: $oc_ver"
+  else
+    _doc_fail "openclaw CLI not found — required for clawbox run/chat/task"
+  fi
+
+  # nc (netcat) for port checks
+  if command -v nc &>/dev/null; then
+    _doc_pass "nc (netcat) available"
+  else
+    _doc_warn "nc (netcat) not found — port checks may be degraded"
+  fi
+
+  echo ""
+
+  # ── 2. Project directory ─────────────────────────────────────────
+  echo "── Project Directory ──"
+  _doc_pass "CLAWBOX_DIR: $CLAWBOX_DIR"
+
+  if [ -f "$CLAWBOX_DIR/docker-compose.yml" ]; then
+    _doc_pass "docker-compose.yml present"
+  else
+    _doc_fail "docker-compose.yml not found in $CLAWBOX_DIR"
+  fi
+
+  if [ -f "$CLAWBOX_DIR/Dockerfile" ]; then
+    _doc_pass "Dockerfile present"
+  else
+    _doc_warn "Dockerfile not found (OK if using pre-built image)"
+  fi
+
+  if [ -f "$CLAWBOX_DIR/seed/AGENTS.md" ]; then
+    _doc_pass "seed/AGENTS.md present"
+  else
+    _doc_warn "seed/AGENTS.md not found — agent may lack task-journal and continuity instructions"
+  fi
+
+  echo ""
+
+  # ── 3. Container health ──────────────────────────────────────────
+  echo "── Container ──"
+  local running
+  running=$(docker inspect "$CONTAINER" --format '{{.State.Running}}' 2>/dev/null || echo "false")
+  local health
+  health=$(docker inspect "$CONTAINER" --format '{{.State.Health.Status}}' 2>/dev/null || echo "missing")
+  local oom
+  oom=$(docker inspect "$CONTAINER" --format '{{.State.OOMKilled}}' 2>/dev/null || echo "false")
+
+  local container_exists
+  container_exists=$(docker inspect "$CONTAINER" &>/dev/null && echo "yes" || echo "no")
+
+  if [ "$running" = "true" ]; then
+    _doc_pass "container $CONTAINER is running"
+  elif [ "$container_exists" = "yes" ]; then
+    local exit_code
+    exit_code=$(docker inspect "$CONTAINER" --format '{{.State.ExitCode}}' 2>/dev/null || echo "?")
+    _doc_fail "container $CONTAINER is stopped (exit code: $exit_code) — run: clawbox start"
+  else
+    _doc_fail "container $CONTAINER does not exist — run: clawbox start"
+  fi
+
+  if [ "$oom" = "true" ]; then
+    _doc_fail "container was OOM-killed — increase memory limit in docker-compose.yml"
+  fi
+
+  if [ "$running" = "true" ]; then
+    if [ "$health" = "healthy" ]; then
+      _doc_pass "container health: healthy"
+    elif [ "$health" = "starting" ]; then
+      _doc_warn "container health: still starting — wait a few seconds and re-run"
+    elif [ "$health" = "unhealthy" ]; then
+      _doc_fail "container health: unhealthy — run: clawbox logs"
+    elif [ "$health" = "missing" ]; then
+      _doc_warn "container health: no healthcheck configured"
+    fi
+  fi
+
+  # read-only rootfs check (only relevant when container exists)
+  if [ "$container_exists" = "yes" ]; then
+    local readonly_rootfs
+    readonly_rootfs=$(docker inspect "$CONTAINER" --format '{{.HostConfig.ReadonlyRootfs}}' 2>/dev/null || echo "unknown")
+    if [ "$readonly_rootfs" = "true" ]; then
+      _doc_pass "rootfs is read-only (security hardening active)"
+    elif [ "$readonly_rootfs" = "false" ]; then
+      _doc_warn "rootfs is writable — consider enabling read_only: true in docker-compose.yml"
+    fi
+
+    # memory limit
+    local mem_limit
+    mem_limit=$(docker inspect "$CONTAINER" --format '{{.HostConfig.Memory}}' 2>/dev/null || echo "0")
+    if [ "$mem_limit" -gt 0 ] 2>/dev/null; then
+      local mem_gb
+      mem_gb=$(awk "BEGIN {printf \"%.0f\", $mem_limit / 1073741824}")
+      if [ "$mem_gb" -ge 4 ] 2>/dev/null; then
+        _doc_pass "memory limit: ${mem_gb}GB"
+      else
+        _doc_warn "memory limit: ${mem_gb}GB — recommend 4GB+ for heavy builds (Prisma/React/Vite)"
+      fi
+    else
+      _doc_warn "no memory limit set (container can use all host memory)"
+    fi
+  fi
+
+  echo ""
+
+  # ── 4. Gateway / port ────────────────────────────────────────────
+  echo "── Gateway (port $GATEWAY_PORT) ──"
+
+  local port_open
+  port_open=$(nc -z 127.0.0.1 "$GATEWAY_PORT" 2>/dev/null && echo "open" || echo "closed")
+  if [ "$port_open" = "open" ]; then
+    _doc_pass "port $GATEWAY_PORT is reachable"
+  else
+    _doc_fail "port $GATEWAY_PORT is not reachable — container may not be running or port binding failed"
+  fi
+
+  # gateway health check (redirect openclaw stdout so we can test exit code cleanly)
+  local gw_health
+  if OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
+    openclaw gateway health >/dev/null 2>&1; then
+    gw_health="healthy"
+  else
+    gw_health="unreachable"
+  fi
+  if [ "$gw_health" = "healthy" ]; then
+    _doc_pass "gateway health: healthy"
+  else
+    _doc_fail "gateway health: unreachable — run: clawbox logs"
+  fi
+
+  # check for port conflict with non-clawbox process
+  if [ "$port_open" = "open" ] && [ "$running" != "true" ]; then
+    local conflicting_pid
+    conflicting_pid=$(check_port "$GATEWAY_PORT")
+    if [ -n "$conflicting_pid" ]; then
+      _doc_warn "port $GATEWAY_PORT is held by PID $conflicting_pid (not clawbox) — run: kill $conflicting_pid"
+    fi
+  fi
+
+  echo ""
+
+  # ── 5. Lock / task state ─────────────────────────────────────────
+  echo "── Lock / Task State ──"
+  if [ -f "$LOCK_FILE" ]; then
+    local lock_pid
+    lock_pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
+    if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
+      _doc_warn "lock file held by PID $lock_pid (task in-flight) — run: clawbox task-status"
+    else
+      _doc_warn "stale lock file found (PID $lock_pid is dead) — run: rm $LOCK_FILE"
+    fi
+  else
+    _doc_pass "no lock file — no task in-flight"
+  fi
+
+  if [ -L "$TASK_LOG_LINK" ]; then
+    local real_log
+    real_log=$(readlink "$TASK_LOG_LINK" 2>/dev/null || echo "")
+    if [ -f "$real_log" ]; then
+      local log_age
+      log_age=$(( $(date +%s) - $(stat -f %m "$real_log" 2>/dev/null || stat -c %Y "$real_log" 2>/dev/null || echo 0) ))
+      local log_age_min=$(( log_age / 60 ))
+      _doc_pass "task log symlink → $real_log (${log_age_min}m ago)"
+    else
+      _doc_warn "task log symlink points to missing file: $real_log"
+    fi
+  else
+    _doc_pass "no task log symlink (no prior background task)"
+  fi
+
+  echo ""
+
+  # ── 6. Workspace ─────────────────────────────────────────────────
+  echo "── Workspace ──"
+  if [ "$running" = "true" ]; then
+    local ws_result
+    ws_result=$(docker exec "$CONTAINER" sh -c "
+      WS=/home/node/.openclaw/workspace
+      test -d \"\$WS\" || { echo 'MISSING'; exit 0; }
+      file_count=\$(find \"\$WS\" -maxdepth 3 -type f ! -path '*/node_modules/*' 2>/dev/null | wc -l | tr -d ' ')
+      du_kb=\$(du -sk \"\$WS\" 2>/dev/null | awk '{print \$1}')
+      echo \"OK files=\$file_count du_kb=\$du_kb\"
+    " 2>/dev/null || echo "ERROR")
+    if echo "$ws_result" | grep -q "^OK"; then
+      local file_count du_kb
+      file_count=$(echo "$ws_result" | grep -o 'files=[0-9]*' | cut -d= -f2)
+      du_kb=$(echo "$ws_result" | grep -o 'du_kb=[0-9]*' | cut -d= -f2)
+      local du_mb=$(( du_kb / 1024 ))
+      _doc_pass "workspace present: $file_count files, ~${du_mb}MB"
+    elif echo "$ws_result" | grep -q "MISSING"; then
+      _doc_warn "workspace directory /home/node/.openclaw/workspace does not exist yet (normal on first run)"
+    else
+      _doc_warn "could not inspect workspace: $ws_result"
+    fi
+
+    # Check for very large workspaces (could cause context overload)
+    if [ -n "${du_kb:-}" ] && [ "$du_kb" -gt 512000 ] 2>/dev/null; then
+      _doc_warn "workspace is >500MB — large workspaces can slow down context injection (--context flag)"
+    fi
+
+    # Check for agent seed files in container
+    local seed_check
+    seed_check=$(docker exec "$CONTAINER" sh -c "
+      test -f /home/node/.openclaw/workspace/AGENTS.md && echo 'yes' || echo 'no'
+    " 2>/dev/null || echo "unknown")
+    if [ "$seed_check" = "yes" ]; then
+      _doc_pass "AGENTS.md present in container workspace"
+    else
+      _doc_warn "AGENTS.md not found in container workspace — agent may not have task-journal instructions"
+    fi
+  else
+    _doc_warn "container not running — skipping workspace checks"
+  fi
+
+  echo ""
+
+  # ── 7. Host disk space ───────────────────────────────────────────
+  echo "── Host Disk ──"
+  local disk_avail_kb
+  disk_avail_kb=$(df -k "$CLAWBOX_DIR" 2>/dev/null | tail -1 | awk '{print $4}' || echo "0")
+  local disk_avail_gb=$(( disk_avail_kb / 1048576 ))
+  if [ "$disk_avail_gb" -ge 10 ] 2>/dev/null; then
+    _doc_pass "host disk available: ~${disk_avail_gb}GB"
+  elif [ "$disk_avail_gb" -ge 5 ] 2>/dev/null; then
+    _doc_warn "host disk available: ~${disk_avail_gb}GB (getting low — npm installs need room)"
+  else
+    _doc_fail "host disk available: ~${disk_avail_gb}GB (critically low — Docker builds may fail)"
+  fi
+
+  # Docker disk usage
+  local docker_usage
+  docker_usage=$(docker system df 2>/dev/null | grep -E "^(Images|Containers|Local Volumes)" | awk '{print $1": "$4}' | tr '\n' ' ' || echo "")
+  if [ -n "$docker_usage" ]; then
+    _doc_pass "Docker disk usage: $docker_usage"
+  fi
+
+  echo ""
+
+  # ── Summary ──────────────────────────────────────────────────────
+  local TOTAL=$((PASS + WARN + FAIL))
+  echo "════════════════════════════════════════"
+  echo "  Pass: $PASS   Warn: $WARN   Fail: $FAIL   (of $TOTAL checks)"
+  echo ""
+  if [ "$FAIL" -gt 0 ]; then
+    echo "  ✗ $FAIL critical issue(s) found — fix the items marked ✗ above."
+    echo ""
+    exit 1
+  elif [ "$WARN" -gt 0 ]; then
+    echo "  ⚠ $WARN advisory item(s) — clawbox is functional but review the ⚠ items."
+    echo ""
+  else
+    echo "  ✓ All checks pass — clawbox looks healthy!"
+    echo ""
+  fi
+}
+
 cmd_help() {
   cat << EOF
 Clawbox — containerized AI coding agent
@@ -903,6 +1205,7 @@ Commands:
   upgrade            Rebuild image with latest OpenClaw
   clean              Stop container and delete all data
   install            Install clawbox CLI to /usr/local/bin
+  doctor             Run self-diagnostic: checks prereqs, container health, gateway, disk
   help               Show this help
 
 Environment:
@@ -940,6 +1243,7 @@ case "$COMMAND" in
   upgrade)     cmd_upgrade "$@" ;;
   clean)       cmd_clean "$@" ;;
   install)     cmd_install "$@" ;;
+  doctor)      cmd_doctor "$@" ;;
   help|--help|-h) cmd_help ;;
   *)
     echo "Unknown command: $COMMAND"
