@@ -353,7 +353,15 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - Agent correctly used the verify-fix-verify loop: ran server → found error → fixed → ran server again; ran tests → found error → fixed → ran tests again. No spiraling, no giving up.
 - Phase 2 open item "self-recovery prompts" confirmed working well. Agent handles multi-layered errors systematically without any special scaffolding.
 
-### T12 — cancel command (2026-03-28) ✅
+### T12 — cancel command (2026-03-28, re-run 2026-03-30) ✅
+
+**Re-run (2026-03-30 16:44) — stability check post ISSUE-43 (timestamped logs):**
+- ✓ **18/18 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ All cancel scenarios still work: no-op idle, stale lock cleanup, live task kill
+- ✓ UX hints (`clawbox cancel`, `task-status`, `assert_not_busy`) all correct
+- **Verdict:** cancel command fully stable. ✅
+
+**Original run (2026-03-28):**
 - ✓ 18/18 checks pass
 - ✓ `clawbox cancel` with no running task: informative message, exit 0
 - ✓ `clawbox cancel` with stale lock (dead PID): reports stale, cleans up lock
@@ -363,7 +371,21 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - ✓ `task-status` and `assert_not_busy` show `clawbox cancel` hint (not raw `kill <pid>`)
 - **Verdict:** cancel command works end-to-end. UX is now first-class — no raw PIDs exposed to the user. ✅
 
-### T11 — Background task mode (2026-03-28) ✅
+### T11 — Background task mode (2026-03-28, rewrite+re-run 2026-03-30) ✅
+
+**Re-run (2026-03-30 16:43) — T11 rewrite + stability check post ISSUE-43 (timestamped logs):**
+- ✓ **11/11 pass, 1 warn, 0 fail**
+- ✓ Non-blocking start: returned in 0s ✓ (previously false-failing due to `$()` cmd-subst bash behavior — test fixed to use temp file instead)
+- ✓ ISSUE-43: timestamped log path (`/Users/arclo/.clawbox-task-YYYYMMDD-HHMMSS.log`) printed in output
+- ✓ ISSUE-43: `~/.clawbox-task.log` is a symlink → timestamped log file
+- ✓ Symlink target matches log path from output (exact match)
+- ✓ Task completed in ~10s, result.txt created with correct content
+- ✓ Lock file cleaned up, concurrent warning works
+- ⚠ Lock race: task completed between lock-create and 1s probe — benign (fast task)
+- **Key discovery:** `$(clawbox task ...)` in tests blocks until the background agent finishes — bash cmd-subst waits for all child process groups. Fixed in T11: use temp file + redirect instead of `$()`.
+- **Verdict:** Background task mode fully stable. ISSUE-43 timestamped log behavior confirmed. ✅
+
+**Original run (2026-03-28):**
 - ✓ `clawbox task` returns immediately with "Task started" message
 - ✓ `clawbox task-status` shows the submitted task in task history
 - ✓ Task completed and created file in container workspace
