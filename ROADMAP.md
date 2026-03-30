@@ -80,11 +80,12 @@
 - **Root cause (ISSUE-45):** `find | head -1` is alphabetical, not time-ordered. Old workspace artifacts pollute TASK.md detection.
 - **Fix applied (2026-03-29):** T3 now uses `find -newer` to detect only TASK.md created in current run; endpoint checks restart the server explicitly before curling. ✅
 
-### T4 — Error recovery (2026-03-26, re-run 2026-03-28, re-run 2026-03-28 #2)
-- ✓ Agent correctly diagnosed `MODULE_NOT_FOUND` error in 26s (first run), 29s (re-run 1), 31s (re-run 2)
-- ✓ Identified dead `require('nonexistent-package')` and removed it all three times
+### T4 — Error recovery (2026-03-26, re-run 2026-03-28, re-run 2026-03-28 #2, re-run 2026-03-30)
+- ✓ Agent correctly diagnosed `MODULE_NOT_FOUND` error in 26s (first run), 29s (re-run 1), 31s (re-run 2), 26s (re-run 3)
+- ✓ Identified dead `require('nonexistent-package')` and removed it all four times
 - ✓ Verified server starts and GET / returns `Hello` (HTTP 200)
 - ✓ Re-run #2 (2026-03-28 14:40) confirms fix still works cleanly after ISSUE-41 (workspace path) changes
+- ✓ Re-run #3 (2026-03-30 00:42) confirms continued stability — consistent 26s diagnosis on latest container image
 - No issues observed — agent performs consistently well on straightforward error recovery across all runs
 
 ### T1 — Long-running task (2026-03-27 runs + 2026-03-28 re-run + 2026-03-29 re-run)
