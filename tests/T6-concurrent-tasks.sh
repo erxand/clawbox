@@ -75,14 +75,14 @@ log "Firing Task A and Task B simultaneously (raw gateway)..."
 START_TIME=$(date +%s)
 
 OPENCLAW_GATEWAY_URL="ws://localhost:18790" OPENCLAW_GATEWAY_TOKEN="clawbox" \
-  openclaw agent --agent main -m "$TASK_A" > /tmp/t6-output-A.txt 2>&1 &
+  openclaw agent --agent main --session-id "t6-concurrent-A-$$" -m "$TASK_A" > /tmp/t6-output-A.txt 2>&1 &
 PID_A=$!
 
 # Small stagger (2s) to make the race condition more realistic but not trivial
 sleep 2
 
 OPENCLAW_GATEWAY_URL="ws://localhost:18790" OPENCLAW_GATEWAY_TOKEN="clawbox" \
-  openclaw agent --agent main -m "$TASK_B" > /tmp/t6-output-B.txt 2>&1 &
+  openclaw agent --agent main --session-id "t6-concurrent-B-$$" -m "$TASK_B" > /tmp/t6-output-B.txt 2>&1 &
 PID_B=$!
 
 log "Task A PID: $PID_A | Task B PID: $PID_B"
