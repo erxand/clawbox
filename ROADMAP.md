@@ -420,6 +420,18 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 - 3 warns were test script false-positives: "add"/"subtract" in agent prose matched cross-contamination regex; `grep -c || echo 0` double-output bug. Both fixed in test script.
 - **Verdict:** Lock mechanism works end-to-end. ISSUE-30/37 confirmed working post-fix. ✅
 
+### T16 — `clawbox doctor` validation ✅ 2026-03-30
+
+**Run 1 (2026-03-30 14:42) — first run of new test:**
+- ✓ **27/27 pass, 0 warn, 0 fail** — perfect score
+- ✓ Phase 1 (healthy container): exits 0, 21/21 internal checks pass, all 7 section headers present, healthy footer shown, no ✗ lines
+- ✓ Phase 2 (stopped container): exits non-zero, correctly reports ✗ for container-not-found, port unreachable, and gateway unreachable; Fail: 3 in summary
+- ✓ Phase 3 (stale lock): detects dead PID 99999999 as `⚠ stale lock file found`, exits 0 (advisory not critical)
+- ✓ Phase 4 (final healthy): clean exit 0 after lock cleanup
+- ✓ Phase 5 (edge cases): `GATEWAY_PORT=19999` correctly reports port 19999 unreachable; `doctor` in help output
+- **Note:** Fixed one test script bug during development — `|| true` in command substitution masked the exit code for the stopped-container check, making it look like doctor exited 0 when it actually exited 1. Fixed with `; STOPPED_EXIT=$?; true` pattern.
+- **Verdict:** `clawbox doctor` is fully functional across all tested scenarios. Exit codes, section structure, failure detection, stale lock advisory behavior, and help integration all confirmed. ✅
+
 ### `clawbox doctor` — self-diagnostic command ✅ Added 2026-03-30
 
 **What:** New `clawbox doctor` command that runs a comprehensive self-diagnostic and prints a clear pass/warn/fail report. Useful for debugging "why isn't clawbox working?" without digging into logs manually.
