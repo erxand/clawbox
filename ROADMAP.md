@@ -329,6 +329,12 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 - **Verdict:** Isolation is clean. But clawbox does NOT handle true parallelism — concurrent requests queue, not interleave. For users expecting background parallelism (e.g. running two builds at once), this is a documentation gap. The behavior is actually safe, but should be explicitly documented.
 - **Next step:** ISSUE-30 below — document the sequential-session behavior and add a warning to the CLI if a second request arrives while one is in-flight.
 
+**Re-run #2 (2026-03-29 20:44) — session isolation fix — 20/20 pass, 0 warn, 0 fail:**
+- ✓ Root cause of persistent warn identified: both raw agent calls shared session history (no `--session-id`). Task B, running after Task A serialized through gateway, referenced Task A's work in its reply, triggering the cross-contamination grep.
+- ✓ Fix: T6 now passes `--session-id t6-concurrent-A-$$` and `--session-id t6-concurrent-B-$$` to give each task a fresh, isolated conversation context.
+- ✓ 20/20 pass, 0 warn, 0 fail — perfect score confirmed
+- **Verdict:** T6 is now fully clean. Session isolation is the correct fix for cross-contamination false positives in concurrent testing. ✅
+
 **Re-run (2026-03-29) — ISSUE-30/37 lock behavior added to T6 — 17/20 pass, 0 fail:**
 - ✓ Part 1 (raw gateway): Both tasks complete (A: 63s, B: 124s wall time), both test suites pass (14/14 math, 22/22 strings), zero real cross-contamination
 - ✓ Part 2 (lock): `clawbox run` exits 1 with actionable message ("⏳ Another Clawbox task is already running") when lock held
