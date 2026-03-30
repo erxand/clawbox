@@ -2,6 +2,20 @@
 
 ## Test Results
 
+### T8 — Context injection (2026-03-27, re-run 2026-03-29)
+
+**Re-run (2026-03-29 22:41) — test script rewrite + fresh validation:**
+- ✓ **10/10 pass, 0 warn, 0 fail**
+- ✓ `--context <file>`: agent mentions `add`/`subtract` from injected math.js
+- ✓ `--context <dir>`: agent correctly mentions all 3 exported symbols (add, subtract, PI); node_modules excluded
+- ✓ `--thinking minimal`: flag forwarded, agent responds normally
+- ✓ `--quiet`: stdout clean (banners to stderr)
+- ✓ `--json`: valid JSON with `response` + `elapsed_ms` keys
+- ✓ Invalid path → clear "not found" error
+- ✓ Missing message → usage hint
+- **Note:** Test script rewritten from `eval`-based unit tests (fragile, broke with complex quoting in cmd_run) to behavioral live-container tests. More reliable and tests actual behavior end-to-end.
+- **Verdict:** Context injection confirmed working across all modes. ✅
+
 ### T2 — Context window stress (2026-03-26, re-run 2026-03-28)
 
 **Run 1 (2026-03-26):**
