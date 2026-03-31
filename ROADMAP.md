@@ -82,6 +82,23 @@
 - **Verdict:** ISSUE-41 confirmed fixed. Multi-session continuity is now reliable end-to-end. ✅
 - **Endpoints after session 2 (despite rebuild):** All working — GET /books ✓, GET /books/1 ✓, POST /books ✓, DELETE /books/1 ✓ (agent completed the full API even though it rebuilt)
 
+**Run 11 (2026-03-31) — ISSUE-55 fix validated:**
+- ✓ Session 1: TASK.md created at correct path (101s), Phase 1 all `[x]`, Phase 2 unchecked
+- ✓ Session 2: All endpoints verified — GET /books ✓, GET /books/1 ✓, POST /books ✓ (validation), DELETE /books/1 ✓ (164s)
+- ✓ TASK.md checkboxes updated in session 2 (S1: 8x → S2: 16x) — Phase 2 items checked off
+- ✓ Agent committed in project-level git repo: 3 commits (`Initial commit`, `Add GET/POST/DELETE endpoints`, `Phase 2 complete`)
+- ✗ T3 test reported `✗ No new git commits` — false negative: test was checking workspace root git repo, not the project's own `.git` repo. Agent correctly created a project-level git repo inside `bookstore-*/`.
+- **Fix applied (2026-03-31):** T3 now checks `cd $WORKSPACE/$PROJECT_NAME && git log --oneline` first (project repo), falling back to workspace root git. S1/S2 git commit counts now compare within the same repo.
+- **Verdict:** ISSUE-55 confirmed fixed — session 2 now updates TASK.md checkboxes AND commits work. True multi-session continuity with proper TASK.md tracking achieved. ✅
+
+**Run 10 (2026-03-31) — ISSUE-55 regression observed:**
+- ✓ Session 1: TASK.md created at `/home/node/.openclaw/workspace/bookstore-20260331-164241/TASK.md` (187s) — Phase 1 all `[x]`, Phase 2 unchecked
+- ✓ Session 2: All endpoints verified working — GET /books ✓, GET /books/1 ✓, POST /books ✓ (validation error = correct), DELETE /books/1 ✓ (107s)
+- ✗ TASK.md NOT updated by session 2 — Phase 2 checkboxes still unchecked (S1: 8x → S2: 8x, unchanged)
+- ✗ No new git commits from session 2 (S1: 5, S2: 5 — same)
+- **Root cause:** AGENTS.md lacked a "Resuming a task" section; task message didn't prompt TASK.md updates. Fix applied, this run used old message format.
+- **Verdict:** Regression correctly detected by new assessment checks. Fix deployed. ⚠️
+
 **Run 8 (2026-03-30) — ISSUE-47 found and fixed:**
 - ✓ Session 1: `bookstore-20260330-024046` created, TASK.md at correct path (118s)
 - ✓ Session 2: Agent resumed, read TASK.md, implemented GET /books/:id, POST /books, DELETE /books/:id, ran tests, committed (230s — git `95a9b36`)
@@ -543,6 +560,17 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 **Exit codes:** 0 = all critical checks pass; 1 = at least one ✗ failure.
 
 **Bug fixed during implementation:** Gateway health inner `&&/||` captured openclaw stdout into the result variable, making string equality fail even when gateway was healthy. Fixed by using `if openclaw ... >/dev/null; then` instead.
+
+### ISSUE-55: Session 2 completes work but never updates TASK.md or commits code ✅ Fixed 2026-03-31
+
+**Problem:** In T3 runs (2026-03-31), session 2 correctly implemented all the bookstore CRUD endpoints (verified working via curl) but left TASK.md completely unchanged — Phase 2 checkboxes still unchecked, "Current Step" still pointing to "Next Step: Phase 2", zero new git commits for the bookstore project. If a session 3 were to start, it would see Phase 2 as TODO and re-implement everything from scratch. The continuity mechanism exists but only for reading — session 2 never wrote back.
+
+**Root cause:** `seed/AGENTS.md` had detailed instructions for "Starting a task" and "When told to stop early (handoff)" but no dedicated **"Resuming a task"** section. An agent picking up from a "continue where you left off" message sees TASK.md as context but doesn't have explicit instructions to check off completed steps or commit code back. The AGENTS.md instructions were oriented around the agent that *creates* the TASK.md, not the one that *continues from* it.
+
+**Fix applied (2026-03-31):**
+1. Added explicit "Resuming a task" section to `seed/AGENTS.md` — step-by-step: read TASK.md, run existing tests, complete unchecked steps, check off each `[ ]` → `[x]` as you go, commit after each major step, update Git Log section. Includes a critical warning: "A session that completes work but leaves TASK.md unchanged has not properly recorded its progress."
+2. Updated T3 session 2 message to explicitly remind: "as you complete each step, check it off in TASK.md (change [ ] to [x]), then commit your changes to git."
+3. Added two new T3 assessment checks: (a) did TASK.md checkbox count increase from S1 → S2? (b) did git commit count increase from S1 → S2? Both are now tracked and reported.
 
 ### ISSUE-54: T1 poll loop runs full 20 minutes even when task completes early ✅ Fixed 2026-03-31
 **Problem:** T1's early-exit check only matched `Status: COMPLETE` in TASK.md. The agent's preferred completion format uses phase checkboxes: `### Phase N: ✅` for each phase — no explicit `Status:` line. The poll loop would run the full 20-minute timeout even on a 6-minute task.

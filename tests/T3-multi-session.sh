@@ -109,7 +109,7 @@ fi
 [ -z "$S1_TASK_MD_PATH" ] && S1_TASK_MD_PATH="(not found)"
 S1_TASK_MD=$(docker exec "$CONTAINER" sh -c "cat '$S1_TASK_MD_PATH' 2>/dev/null" 2>/dev/null || echo "(not found)")
 S1_FILES=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -type f \( -name '*.js' -o -name '*.json' \) 2>/dev/null | grep -v node_modules | grep -v '/.git/' | grep -v AGENTS.md | grep -v SOUL.md | head -20" || echo "(none)")
-S1_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd $WORKSPACE && git log --oneline 2>/dev/null" || echo "(no git repo)")
+S1_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd $WORKSPACE/$PROJECT_NAME && git log --oneline 2>/dev/null || cd $WORKSPACE && git log --oneline 2>/dev/null" || echo "(no git repo)")
 
 log "Session 1 state captured. Stopping container..."
 
@@ -125,7 +125,7 @@ wait_healthy
 
 log "=== SESSION 2: Continue bookstore API ==="
 
-SESSION2_MSG="Continue the bookstore API from where you left off. The project is in /home/node/.openclaw/workspace/${PROJECT_NAME}/. Check TASK.md there for context. Add POST /books (add a book), GET /books/:id, and DELETE /books/:id. Then start the server and verify all endpoints work."
+SESSION2_MSG="Continue the bookstore API from where you left off. The project is in /home/node/.openclaw/workspace/${PROJECT_NAME}/. Read TASK.md there first. Then: add POST /books (add a book), GET /books/:id, and DELETE /books/:id. Start the server and verify all endpoints work. IMPORTANT: as you complete each step, check it off in TASK.md (change [ ] to [x]), then commit your changes to git."
 
 log "Sending session 2 message..."
 SESSION2_START=$(date +%s)
@@ -170,7 +170,7 @@ GET_BOOKS_ALT=$(docker exec "$CONTAINER" sh -c "curl -s http://localhost:3001/bo
 S2_TASK_MD_PATH="$S1_TASK_MD_PATH"
 S2_TASK_MD=$(docker exec "$CONTAINER" sh -c "cat '$S2_TASK_MD_PATH' 2>/dev/null" 2>/dev/null || echo "(not found)")
 S2_FILES=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -type f \( -name '*.js' -o -name '*.json' \) 2>/dev/null | grep -v node_modules | grep -v '/.git/' | grep -v AGENTS.md | head -20" || echo "(none)")
-S2_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd $WORKSPACE && git log --oneline 2>/dev/null" || echo "(no git repo)")
+S2_GIT_LOG=$(docker exec "$CONTAINER" sh -c "cd $WORKSPACE/$PROJECT_NAME && git log --oneline 2>/dev/null || cd $WORKSPACE && git log --oneline 2>/dev/null" || echo "(no git repo)")
 
 # ── Write results ──────────────────────────────────────────────────
 
@@ -184,6 +184,21 @@ if [ "$GET_BOOKS" != "FAIL" ] && [ -n "$GET_BOOKS" ] && echo "$GET_BOOKS" | grep
 # Secondary signal: TASK.md mentions completed POST/GET/:id/DELETE endpoints (agent finished even if server couldn't restart)
 TASK_SHOWS_COMPLETE="no"
 if echo "$S2_TASK_MD" | grep -qi "POST.*books\|books.*POST\|\[x\].*POST\|POST.*\[x\]" 2>/dev/null; then TASK_SHOWS_COMPLETE="yes"; fi
+
+# New checks: did session 2 update TASK.md checkboxes? Did it commit new code?
+TASK_MD_UPDATED="no"
+# Count [x] lines in phase 2 section — session 1 leaves phase 2 unchecked; session 2 should check them
+PHASE2_CHECKED=$(echo "$S2_TASK_MD" | grep -c "\[x\].*\(GET.*/:id\|POST.*books\|DELETE.*books\|CRUD\|endpoint\)" 2>/dev/null || echo "0")
+# Also check raw [x] count increased beyond phase 1
+S1_X_COUNT=$(echo "$S1_TASK_MD" | grep -c "\[x\]" 2>/dev/null || echo "0")
+S2_X_COUNT=$(echo "$S2_TASK_MD" | grep -c "\[x\]" 2>/dev/null || echo "0")
+if [ "$S2_X_COUNT" -gt "$S1_X_COUNT" ] 2>/dev/null; then TASK_MD_UPDATED="yes"; fi
+
+# Did session 2 make new git commits?
+NEW_COMMITS_ADDED="no"
+S1_COMMIT_COUNT=$(echo "$S1_GIT_LOG" | grep -c "^[0-9a-f]" 2>/dev/null || echo "0")
+S2_COMMIT_COUNT=$(echo "$S2_GIT_LOG" | grep -c "^[0-9a-f]" 2>/dev/null || echo "0")
+if [ "$S2_COMMIT_COUNT" -gt "$S1_COMMIT_COUNT" ] 2>/dev/null; then NEW_COMMITS_ADDED="yes"; fi
 
 cat > "$RESULT_FILE" << RESULT_EOF
 # T3 — Multi-session continuity test
@@ -249,6 +264,8 @@ $([ "$FOUND_TASK_MD" = "yes" ] && echo "✓ Agent created TASK.md in session 1" 
 $([ "$CONTINUED_OK" = "yes" ] && echo "✓ Agent successfully continued in session 2 (endpoints verified)" || \
   ([ "$TASK_SHOWS_COMPLETE" = "yes" ] && echo "⚠ Agent continued (TASK.md shows work done) but endpoint verification failed — server restart issue" || \
    echo "✗ Agent failed to continue properly in session 2"))
+$([ "$TASK_MD_UPDATED" = "yes" ] && echo "✓ TASK.md checkboxes updated in session 2 (S1: ${S1_X_COUNT}x → S2: ${S2_X_COUNT}x)" || echo "✗ TASK.md NOT updated by session 2 (S1: ${S1_X_COUNT}x checked, S2: ${S2_X_COUNT}x checked — no progress recorded)")
+$([ "$NEW_COMMITS_ADDED" = "yes" ] && echo "✓ New git commits made in session 2 (S1: ${S1_COMMIT_COUNT} → S2: ${S2_COMMIT_COUNT})" || echo "✗ No new git commits from session 2 (S1: ${S1_COMMIT_COUNT} commits, S2: ${S2_COMMIT_COUNT} commits — same)")
 
 ### What was lost between sessions?
 $([ "$FOUND_TASK_MD" = "yes" ] && echo "TASK.md was preserved across restart." || echo "No TASK.md found — continuity mechanism not used.")

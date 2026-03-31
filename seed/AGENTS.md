@@ -113,6 +113,21 @@ Create `TASK.md` **inside your project directory** (e.g. `/home/node/.openclaw/w
   - Frontend complete
 - If something goes wrong, write the error and what you tried to TASK.md before giving up
 
+### Resuming a task
+
+When you find an existing TASK.md (from the session startup check or because the user says "continue"):
+
+1. **Read TASK.md immediately** — understand what was done and what's left
+2. **Run existing tests first** to confirm baseline state before making changes
+3. **Continue from where it left off** — implement the unchecked steps in order
+4. **Check off each step as you complete it** — update the `[ ]` → `[x]` in TASK.md
+5. **Update "Current Step"** as you move through the work
+6. **Commit after each major step** with a "progress: ..." commit message
+7. **Update TASK.md's Git Log section** with new commit hashes
+8. When all steps are done, move TASK.md to the tasks/ archive and make a final commit
+
+**Critical:** After resuming and completing work, your TASK.md MUST show updated checkboxes and the git log MUST have new commits. A session that completes work but leaves TASK.md unchanged has not properly recorded its progress — the next session will re-do everything.
+
 ### When told to stop early (handoff)
 
 If the user says "stop here" or "I'll continue this in a new session", update TASK.md before stopping:
