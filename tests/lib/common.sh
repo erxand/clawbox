@@ -19,8 +19,12 @@ RATE_LIMIT_PATTERNS=(
   "rate_limit_error"
   "CLAWBOX_RATE_LIMITED"
   "overloaded_error"
-  "529"
 )
+
+# ISSUE-53: "529" removed from RATE_LIMIT_PATTERNS — bare "529" is too broad and matches
+# project directory names like "taskman-1774975299" in task logs, producing false-positive
+# SKIP results. HTTP 529 is indicated by the more specific patterns above (overloaded_error,
+# "API rate limit reached", or CLAWBOX_RATE_LIMITED sentinel emitted by `clawbox run`).
 
 # is_rate_limited <output_string>
 # Returns 0 (true) if the output looks like a rate-limit response, 1 otherwise.

@@ -77,8 +77,20 @@ while [ $(($(date +%s) - START_TIME)) -lt $TIMEOUT_SECONDS ]; do
     fi
     # Early exit if task is complete — no need to wait the full timeout
     # Use anchored patterns to avoid matching content like "/tasks/:id/complete" or "mark complete"
+    # Also check for agent's common "all phases done" patterns in TASK.md (ISSUE-53 improvement):
+    #   - "Status: COMPLETE" at line start
+    #   - "All objectives achieved" anywhere
+    #   - All phases checked off (Phase 1-5 all have ✅ — also check last phase marker)
+    #   - "Test Suite: N/N passing ✅" near "Backend" and "Frontend" ✅ lines (all done)
+    PHASES_DONE=$(echo "$TASK_CONTENT" | grep -cE 'Phase [0-9]+:.*✅' || echo "0")
+    PHASES_DONE=$(echo "$PHASES_DONE" | tr -d ' ')
+    PHASES_TOTAL=$(echo "$TASK_CONTENT" | grep -cE '### Phase [0-9]+:' || echo "0")
+    PHASES_TOTAL=$(echo "$PHASES_TOTAL" | tr -d ' ')
     if echo "$TASK_CONTENT" | grep -qiE '^(\*\*)?Status:.*COMPLETE|^Status:.*COMPLETE|All objectives achieved|DONE — all steps complete'; then
       log "Task marked COMPLETE — exiting poll loop early."
+      break
+    elif [ -n "$PHASES_TOTAL" ] && [ "$PHASES_TOTAL" -gt 0 ] && [ "$PHASES_DONE" = "$PHASES_TOTAL" ] 2>/dev/null; then
+      log "All $PHASES_TOTAL phases complete (✅) — exiting poll loop early."
       break
     fi
   fi

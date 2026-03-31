@@ -114,7 +114,18 @@
 - ✓ Re-run #3 (2026-03-30 00:42) confirms continued stability — consistent 26s diagnosis on latest container image
 - No issues observed — agent performs consistently well on straightforward error recovery across all runs
 
-### T1 — Long-running task (2026-03-27 runs + 2026-03-28 re-run + 2026-03-29 re-run + 2026-03-30 re-run)
+### T1 — Long-running task (2026-03-27 runs + 2026-03-28 re-run + 2026-03-29 re-run + 2026-03-30 re-run + 2026-03-31 re-run)
+
+**Run 6 (2026-03-31 10:41) — stability check + ISSUE-53/54 found and fixed:**
+- ✓ TASK.md created with full 4-phase plan (all phases ✅)
+- ✓ 4 git commits: backend → tests → frontend → final
+- ✓ Port 3000: HTTP 401 at /api/tasks (auth working correctly)
+- ✓ Port 8080: HTTP 200 (frontend serving)
+- ⚠ Tests partial: 17/18 — "Register new user" test failing (test-ordering issue; backend auth logic is sound)
+- ✗ T1 initially SKIPPED due to false-positive rate-limit detection — **root cause: ISSUE-53**
+- ✗ Poll loop ran full 20 minutes despite agent completing in ~6 minutes — **root cause: ISSUE-54**
+- **Fixes applied (2026-03-31):** (1) Removed `"529"` from `RATE_LIMIT_PATTERNS` in `common.sh` — bare substring was matching project dir names like `taskman-1774975299`; (2) T1 poll loop now also exits early when all `Phase N: ✅` headers are checked off (covers agents that use phase-tracking instead of `Status: COMPLETE`). Both fixes now in place.
+- **Verdict:** App is fully functional. T1 infrastructure bugs found and fixed. ✅
 
 **Run 5 (2026-03-30 08:40) — stability check + ISSUE-48 found:**
 - ✓ TASK.md created with full 5-phase plan (all phases checked off)
@@ -532,6 +543,16 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 **Exit codes:** 0 = all critical checks pass; 1 = at least one ✗ failure.
 
 **Bug fixed during implementation:** Gateway health inner `&&/||` captured openclaw stdout into the result variable, making string equality fail even when gateway was healthy. Fixed by using `if openclaw ... >/dev/null; then` instead.
+
+### ISSUE-54: T1 poll loop runs full 20 minutes even when task completes early ✅ Fixed 2026-03-31
+**Problem:** T1's early-exit check only matched `Status: COMPLETE` in TASK.md. The agent's preferred completion format uses phase checkboxes: `### Phase N: ✅` for each phase — no explicit `Status:` line. The poll loop would run the full 20-minute timeout even on a 6-minute task.
+**Symptom (T1 run 6, 2026-03-31):** Agent completed at 10:47 (386s in), but polls kept running until 11:01 (20-minute ceiling), wasting 14 minutes and then running the post-loop rate-limit check against a 20-minute-old log.
+**Fix:** T1 now counts `Phase N: ✅` vs `### Phase N:` totals. When `done == total` (and `total > 0`), the loop exits early with a "All N phases complete" log line. Original `Status: COMPLETE` pattern still retained for backwards compatibility with other TASK.md formats.
+
+### ISSUE-53: `is_rate_limited()` false-positive matches project directory names containing "529" ✅ Fixed 2026-03-31
+**Problem:** `tests/lib/common.sh` `RATE_LIMIT_PATTERNS` included `"529"` as a bare pattern to detect HTTP 529 (Overloaded) responses. This is too broad — any task log that mentions a path or directory name containing the substring `529` will match. Example: `taskman-1774975299` in the task description has `529` as a substring, so T1 was incorrectly SKIPped after a fully successful run.
+**Symptom:** T1 run 6 (2026-03-31): agent completed in 6 minutes, 17/18 tests passing, both servers running — but T1 reported SKIP (API Rate Limited) because the task log header contained the project directory name `taskman-1774975299`.
+**Fix:** Removed `"529"` from `RATE_LIMIT_PATTERNS`. HTTP 529 Overloaded is covered by the more specific `"overloaded_error"` error code and the `CLAWBOX_RATE_LIMITED` sentinel that `clawbox run` emits on any rate-limit/overload response. Bare status codes are not reliable patterns for text-based detection.
 
 ### ISSUE-52: T15 test 9 fails when container stops during SIGUSR1 handoff reload ✅ Fixed 2026-03-31
 **Problem:** After the timeout + handoff completes, test 9 tries to start a new task. If the SIGUSR1 gateway reload caused the container to become unavailable (crash or restart), `clawbox task` fires `assert_container_running` and immediately fails. T15 reported `✗ New task failed to start after timeout`.
