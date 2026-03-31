@@ -51,13 +51,19 @@ else
 fi
 
 # ── Check 2: /proc/mounts shows ro for rootfs ───────────────────────
+# Note: Docker overlay2 always reports the rootfs as 'rw' in /proc/mounts at the
+# filesystem layer, even when HostConfig.ReadonlyRootfs=true. The authoritative
+# check is HostConfig.ReadonlyRootfs (Check 1). We skip the /proc/mounts check
+# and instead confirm that a write attempt to the rootfs actually fails.
 
-log "Check 2: /proc/mounts rootfs mount..."
-MOUNT_MODE=$(docker exec "$CONTAINER" sh -c "cat /proc/mounts | grep ' / ' | grep -o ',ro,' | head -1" 2>/dev/null || echo "")
-if [ -n "$MOUNT_MODE" ]; then
-  pass "Root filesystem mounted read-only (,ro, in /proc/mounts)"
+log "Check 2: rootfs write rejection (overlay2-safe)..."
+WRITE_ATTEMPT=$(docker exec "$CONTAINER" sh -c "touch /t13-probe-write-check 2>&1; echo EXIT:\$?" 2>/dev/null || echo "EXIT:1")
+WRITE_EXIT=$(echo "$WRITE_ATTEMPT" | grep "EXIT:" | cut -d: -f2 | tr -d ' \n')
+if [ "$WRITE_EXIT" != "0" ]; then
+  pass "Root filesystem correctly rejects writes (overlay2-safe check)"
 else
-  warn "Could not confirm ro in /proc/mounts (Docker overlay2 may show 'rw' at mount layer)"
+  fail "Root filesystem accepted a write at / — ReadonlyRootfs may not be effective"
+  docker exec "$CONTAINER" sh -c "rm -f /t13-probe-write-check 2>/dev/null || true"
 fi
 
 # ── Check 3: Write attempts to critical rootfs paths ────────────────

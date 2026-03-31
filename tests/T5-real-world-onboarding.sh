@@ -370,14 +370,36 @@ NEW_TESTS_EXISTS=$(docker exec "$CONTAINER" sh -c "test -f $PROJECT_DIR/test/rat
 INDEX_MODIFIED=$(docker exec "$CONTAINER" sh -c "grep -q 'rateLimit\|rate-limit\|rate_limit' $PROJECT_DIR/src/index.js 2>/dev/null && echo yes || echo no" 2>/dev/null || echo "no")
 
 # Run the test suite and capture results
+# Use npm test (respects package.json scripts.test which may set NODE_ENV=test)
+# and fall back to direct invocation if needed.
 FINAL_TEST_RESULT=$(docker exec "$CONTAINER" sh -c "
   cd $PROJECT_DIR
-  node --test test/**/*.test.js 2>&1
+  npm test 2>&1
 " 2>/dev/null || echo "(test run failed)")
 
-TESTS_PASS=$(echo "$FINAL_TEST_RESULT" | grep -c "# pass" || echo "0")
-TESTS_FAIL=$(echo "$FINAL_TEST_RESULT" | grep -c "# fail" || echo "0")
-TESTS_TOTAL=$(echo "$FINAL_TEST_RESULT" | grep -c "# tests" || echo "0")
+# Extract pass/fail counts from TAP summary lines (e.g. "# pass 13", "# fail 1")
+TESTS_PASS=$(echo "$FINAL_TEST_RESULT" | grep "^# pass" | awk '{print $3}' | head -1 || echo "0")
+TESTS_FAIL=$(echo "$FINAL_TEST_RESULT" | grep "^# fail" | awk '{print $3}' | head -1 || echo "0")
+TESTS_TOTAL=$(echo "$FINAL_TEST_RESULT" | grep "^# tests" | awk '{print $3}' | head -1 || echo "0")
+
+# Default unset values to 0
+[ -z "$TESTS_PASS" ] && TESTS_PASS=0
+[ -z "$TESTS_FAIL" ] && TESTS_FAIL=0
+[ -z "$TESTS_TOTAL" ] && TESTS_TOTAL=0
+
+# Determine overall test status (same precedence as T1 ISSUE-48 fix):
+# check for failures FIRST, then partial, then full pass
+if echo "$FINAL_TEST_RESULT" | grep -qE "^# fail [1-9]"; then
+  if [ "$TESTS_TOTAL" -gt 0 ] && [ "$TESTS_PASS" -gt 0 ]; then
+    TESTS_STATUS="partial (${TESTS_PASS}/${TESTS_TOTAL})"
+  else
+    TESTS_STATUS="failing"
+  fi
+elif echo "$FINAL_TEST_RESULT" | grep -q "^# pass"; then
+  TESTS_STATUS="yes"
+else
+  TESTS_STATUS="unknown"
+fi
 
 # Get agent output summary
 AGENT_OUTPUT=$(cat /tmp/t5-output.txt 2>/dev/null | tail -60)
@@ -422,14 +444,17 @@ Agent was asked to:
 | Middleware file created | $MIDDLEWARE_EXISTS |
 | Rate limit tests created | $NEW_TESTS_EXISTS |
 | index.js wired middleware | $INDEX_MODIFIED |
-| Test pass blocks | $TESTS_PASS |
-| Test fail blocks | $TESTS_FAIL |
+| Tests passing | $TESTS_STATUS |
+| Tests pass count | $TESTS_PASS |
+| Tests fail count | $TESTS_FAIL |
+| Tests total | $TESTS_TOTAL |
 
 ## Assessment
 $([ "$MIDDLEWARE_EXISTS" = "yes" ] && echo "✓ Rate limiting middleware created" || echo "✗ Middleware NOT created at expected path")
 $([ "$NEW_TESTS_EXISTS" = "yes" ] && echo "✓ Rate limit tests written" || echo "✗ Tests for rate limiter NOT found")
 $([ "$INDEX_MODIFIED" = "yes" ] && echo "✓ Middleware wired into app" || echo "✗ Middleware NOT wired into index.js")
 $([ "$TIMED_OUT" = "no" ] && echo "✓ Completed within ${TIMEOUT_SECONDS}s timeout" || echo "✗ Timed out after ${TIMEOUT_SECONDS}s")
+$(if [ "$TESTS_STATUS" = "yes" ]; then echo "✓ All tests passing (${TESTS_PASS}/${TESTS_TOTAL})"; elif echo "$TESTS_STATUS" | grep -q "partial"; then echo "⚠ Tests partial: ${TESTS_PASS}/${TESTS_TOTAL} — ${TESTS_FAIL} failing"; else echo "✗ Tests failing (${TESTS_FAIL} failures, ${TESTS_PASS} passing)"; fi)
 
 ## Final test suite output
 \`\`\`

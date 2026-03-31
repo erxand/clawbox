@@ -287,8 +287,19 @@ Start a task, stop mid-way (`clawbox stop`), restart, and ask the agent to conti
 ### T4 — Error recovery
 Deliberately introduce errors during a task (kill a dependency, corrupt a file, break the test suite). Does the agent notice, diagnose, and recover? Or does it spiral?
 
-### T5 — Real-world project onboarding ✅ 2026-03-26
+### T5 — Real-world project onboarding ✅ 2026-03-26, re-runs 2026-03-29, 2026-03-30
 Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask the agent to: (1) understand the codebase, (2) add a new feature, (3) write tests, (4) make sure existing tests pass. Measure quality and completeness.
+
+**Re-run (2026-03-30 20:42) — T5 test infra fix (npm test + proper pass/fail detection):**
+- ✓ Middleware created: `src/middleware/rateLimit.js` with per-IP tracking, configurable limit/window
+- ✓ Middleware wired into `src/index.js` with env-var config
+- ✓ Rate limit tests written
+- ✓ Completed in 221s (~3.7 min), no timeout
+- ✗ 13/14 tests pass — same test 14 failure (`GET /recipes?category=` gets 429 instead of 200)
+- **Finding:** T5 verification script was running `node --test test/**/*.test.js` directly, which bypasses `package.json`'s `scripts.test` that sets `NODE_ENV=test`. Fixed to use `npm test`. However the agent's app code itself still doesn't disable rate limiting in test mode when run via the verification step in T5, because the agent uses `NODE_ENV=test` check in `scripts.test` but the rate limiter middleware was initialized at require-time before `NODE_ENV` could take effect.
+- **Root cause of 14th test failure (consistent pattern):** By test 14, the in-process server has accumulated 10+ requests from tests 6-13 (the recipe CRUD tests). The rate limit window (default 1min) hasn't expired. The agent's `NODE_ENV=test` workaround correctly raises the limit to 1000 — but only if NODE_ENV is set *before* the server starts. The T5 test verification restarts via `npm test` which should work, but the middleware captures `process.env.RATE_LIMIT` at instantiation time via closure. If the env var isn't in scope at that moment, the default 10 applies.
+- **Pattern:** Agent produces correct-quality code. The failure is a subtle Node.js module initialization ordering issue — a legitimate gotcha even for experienced developers. The agent gets 93% (13/14) consistently.
+- **T5 fixes applied (2026-03-30):** (1) Verification now uses `npm test` (respects package.json scripts); (2) Pass/fail detection uses TAP `# pass N` / `# fail N` summary lines with FAIL-first precedence (same pattern as T1 ISSUE-48 fix); (3) Assessment line shows `✓ All tests (N/N)` vs `⚠ partial (N/M)` vs `✗ failing` correctly.
 
 **Results (2026-03-26):**
 - ✓ Agent correctly summarized architecture in a few sentences
@@ -370,6 +381,15 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - ✓ `cancel` in help with correct description
 - ✓ `task-status` and `assert_not_busy` show `clawbox cancel` hint (not raw `kill <pid>`)
 - **Verdict:** cancel command works end-to-end. UX is now first-class — no raw PIDs exposed to the user. ✅
+
+### T13 — Read-only rootfs validation ✅ 2026-03-28, re-runs 2026-03-29 + 2026-03-30
+
+**Re-run (2026-03-30 20:41) — T13 false-positive warn fix:**
+- ✓ **15/15 pass, 0 warn, 0 fail** — perfect score (was 14/15 with 1 warn previously)
+- **Fix:** Check 2 was using `/proc/mounts` to verify rootfs is `ro`. Docker overlay2 always shows the union mount as `rw` at the filesystem layer — even when `HostConfig.ReadonlyRootfs=true`. The `ReadonlyRootfs` flag is enforced via the kernel's VFS write-protect layer, not via the mount flags that `/proc/mounts` exposes. Replaced with a direct write-attempt test at `/`: `touch /t13-probe-write-check` — fails if rootfs is truly read-only (which it is). This is functionally correct AND produces no spurious warn.
+- **Verdict:** T13 is now 15/15. No more false-positive warn from overlay2 mount metadata. ✅
+
+**Previous runs (2026-03-28 to 2026-03-30):** Consistent 14/15, 0 fail, 1 warn — all due to the overlay2 `/proc/mounts` false-positive only.
 
 ### T11 — Background task mode (2026-03-28, rewrite+re-run 2026-03-30) ✅
 
