@@ -515,6 +515,14 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 
 **Bug fixed during implementation:** Gateway health inner `&&/||` captured openclaw stdout into the result variable, making string equality fail even when gateway was healthy. Fixed by using `if openclaw ... >/dev/null; then` instead.
 
+### ISSUE-49: Hardcoded port 18790 in `assert_container_running` ✅ Fixed 2026-03-31
+**Problem:** `assert_container_running` checked `nc -z 127.0.0.1 18790` (hardcoded) instead of `nc -z 127.0.0.1 "$GATEWAY_PORT"`. When running a non-default port (e.g. `GATEWAY_PORT=18791 clawbox run ...`), the check would verify the wrong port — showing no warning even if 18791 wasn't actually reachable. If another process happened to hold 18790, the check would always pass even though the clawbox gateway was unreachable.
+**Fix:** Changed the hardcoded `18790` to `"$GATEWAY_PORT"` and updated the warning message to show `$GATEWAY_PORT` dynamically. Now multi-instance setups (ISSUE-24 feature) get correct port validation.
+
+### ISSUE-50: Missing `overloaded_error` in `cmd_run` rate-limit detection ✅ Fixed 2026-03-31
+**Problem:** The rate-limit detection in `cmd_run` (`grep -qi "API rate limit reached\|rate limit reached\|rate_limit_error"`) was missing `overloaded_error` — the Anthropic API error code for 529 Overloaded responses. The `tests/lib/common.sh` already included `overloaded_error` in its `RATE_LIMIT_PATTERNS` array, but the CLI itself didn't detect it, so `--retry` would not retry on overloaded errors and the `CLAWBOX_RATE_LIMITED` sentinel would not be emitted.
+**Fix:** Added `overloaded_error` to the grep pattern in `cmd_run`. Pattern is now consistent with `tests/lib/common.sh`.
+
 ### ISSUE-48: T1 test pass/fail detection false-positive when partial tests fail ✅ Fixed 2026-03-30
 **Problem:** T1's `TESTS_PASSING` detection checked for `✓` symbols before checking for `Failed: N`. Because passing tests are listed one-by-one with `✓` before the final summary line, the grep matched `✓` first and returned `yes` even when `Failed: 1` appeared at the end of the output. Run 5 (2026-03-30) had 19/20 tests passing but was reported as `Tests passing: yes` in the result file.
 **Fix:** Test pass/fail detection now checks `Failed: [1-9]` FIRST. On partial pass, reports `partial (N/M)` instead of `yes`. Assessment block updated: `✗ Tests failing` for complete failure, `⚠ Tests partial: N/M` for partial. The `✓` check is still used as a positive indicator but only when no failures are detected.
@@ -594,3 +602,9 @@ Time how long it takes a hypothetical new dev to go from zero to running a task.
 - ✓ Container start: 8s, first agent response: 12s
 - ✓ All prior warn items (README commands, ws:// in status, `ask` alias) confirmed fixed and holding
 - **Verdict:** UX is clean end-to-end including all new commands from ISSUE-37/38/39/40. No remaining friction gaps.
+
+**Re-run (2026-03-31 00:44) — stability check post ISSUE-49/50 fixes:**
+- ✓ **40/40 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ Container start: 8s, first agent response: 21s
+- ✓ All checks holding after hardcoded-port (ISSUE-49) and overloaded_error (ISSUE-50) fixes
+- **Verdict:** UX still fully clean. ✅

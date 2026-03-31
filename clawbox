@@ -61,10 +61,10 @@ assert_container_running() {
   # Also verify the gateway port is actually reachable (ISSUE-27: container can start
   # without port bindings after a port conflict)
   local port_open
-  port_open=$(nc -z 127.0.0.1 18790 2>/dev/null && echo "open" || echo "closed")
+  port_open=$(nc -z 127.0.0.1 "$GATEWAY_PORT" 2>/dev/null && echo "open" || echo "closed")
   if [ "$port_open" != "open" ]; then
     echo ""
-    echo "⚠ WARNING: Container is running but port 18790 is not reachable!"
+    echo "⚠ WARNING: Container is running but port $GATEWAY_PORT is not reachable!"
     echo "  This can happen after a port conflict — the container may have started"
     echo "  without its port mappings. Your request would go to the host agent."
     echo ""
@@ -407,8 +407,9 @@ cmd_run() {
       openclaw agent --agent main ${agent_args[@]+"${agent_args[@]}"} -m "$message")
 
     # ISSUE-44: Detect API rate limit in response. Rate-limited responses contain
-    # the phrase "API rate limit reached" from the OpenClaw gateway.
-    if echo "$response" | grep -qi "API rate limit reached\|rate limit reached\|rate_limit_error"; then
+    # the phrase "API rate limit reached" from the OpenClaw gateway. Also detect
+    # Anthropic's overloaded_error which surfaces with the same user impact.
+    if echo "$response" | grep -qi "API rate limit reached\|rate limit reached\|rate_limit_error\|overloaded_error"; then
       if [ "$attempt" -lt "$retry_max" ]; then
         attempt=$((attempt + 1))
         _banner "⚠ Rate limited by API (attempt $attempt/$retry_max). Waiting 60s before retry..."
