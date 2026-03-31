@@ -16,7 +16,7 @@
 - **Note:** Test script rewritten from `eval`-based unit tests (fragile, broke with complex quoting in cmd_run) to behavioral live-container tests. More reliable and tests actual behavior end-to-end.
 - **Verdict:** Context injection confirmed working across all modes. ✅
 
-### T2 — Context window stress (2026-03-26, re-run 2026-03-28, re-run 2026-03-30)
+### T2 — Context window stress (2026-03-26, re-run 2026-03-28, re-run 2026-03-30, re-run 2026-03-31)
 
 **Run 1 (2026-03-26):**
 - ✓ Agent navigated 141-file Express.js codebase selectively (no context overload)
@@ -24,6 +24,15 @@
 - ✓ Completed in 196s (~3 min), no timeout
 - ⚠️ Agent modified `node_modules/router/index.js` instead of Express's own `lib/router/index.js` — found the vendored dependency, not the actual source file. Task succeeded but in a slightly wrong location.
 - ⚠️ `ROUTER_STATS_SUMMARY.md` auto-created but not explicitly asked for — agent gold-plates a bit
+
+**Run 4 (2026-03-31) — stability check post ISSUE-49/50/51/52 fixes:**
+- ✓ test-router-stats.js created in express-oss/ ✓
+- ✓ stats() added to CORRECT file (lib/router/index.js) ✓
+- ✓ node_modules/router/ not modified (correct) ✓
+- ✓ 5/5 tests passing (agent verified existing work, confirmed correctness)
+- ✓ Completed in 122s (~2 min) — faster than prior runs (workspace already scaffolded)
+- ✓ Agent took selective approach: only read 3 files before confirming implementation existed
+- **Verdict:** T2 fully stable. Agent's selective codebase navigation pattern holding strong. ✅
 
 **Run 3 (2026-03-30) — stability check post all ISSUE-44/47/48 fixes:**
 - ✓ test-router-stats.js created in express-oss/ ✓
@@ -470,7 +479,16 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 - 3 warns were test script false-positives: "add"/"subtract" in agent prose matched cross-contamination regex; `grep -c || echo 0` double-output bug. Both fixed in test script.
 - **Verdict:** Lock mechanism works end-to-end. ISSUE-30/37 confirmed working post-fix. ✅
 
-### T16 — `clawbox doctor` validation ✅ 2026-03-30
+### T16 — `clawbox doctor` validation ✅ 2026-03-30, re-run 2026-03-31
+
+**Re-run (2026-03-31 06:41) — stability check post ISSUE-49/50 fixes:**
+- ✓ **27/27 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ Phase 1 (healthy container): all 21 internal checks pass, all section headers present, healthy footer
+- ✓ Phase 2 (stopped container): correctly reports ✗ container/port/gateway failures; Fail: 3
+- ✓ Phase 3 (stale lock): detects dead PID 99999999 as `⚠ stale lock file found`, exits 0
+- ✓ Phase 4 (final healthy): clean exit 0 after lock cleanup
+- ✓ Phase 5 (edge cases): `GATEWAY_PORT=19999` correctly reports port 19999 unreachable
+- **Verdict:** `clawbox doctor` fully stable after ISSUE-49 (hardcoded port fix) and ISSUE-50 (overloaded_error pattern). ✅
 
 **Run 1 (2026-03-30 14:42) — first run of new test:**
 - ✓ **27/27 pass, 0 warn, 0 fail** — perfect score
