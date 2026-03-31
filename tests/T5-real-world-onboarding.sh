@@ -65,7 +65,7 @@ docker exec "$CONTAINER" sh -c "
   \"main\": \"src/index.js\",
   \"scripts\": {
     \"start\": \"node src/index.js\",
-    \"test\": \"node --test test/**/*.test.js\"
+    \"test\": \"NODE_ENV=test node --test test/**/*.test.js\"
   },
   \"dependencies\": {
     \"express\": \"^4.18.2\"
@@ -304,7 +304,7 @@ docker exec "$CONTAINER" sh -c "
 log "Running baseline tests..."
 BASELINE_RESULT=$(docker exec "$CONTAINER" sh -c "
   cd $PROJECT_DIR
-  node --test test/**/*.test.js 2>&1
+  npm test 2>&1
 " || true)
 
 BASELINE_PASS=$(echo "$BASELINE_RESULT" | grep -c "# tests" || echo "0")
@@ -317,9 +317,9 @@ TASK_MSG="I have a small Express.js recipe API project at $PROJECT_DIR/.
 Please:
 1. Read the source code and summarize the architecture in 2-3 sentences.
 2. Add a configurable rate limiting middleware to src/middleware/rateLimit.js. It should: track request counts per IP per time window (default: 10 req/min), return 429 with {error:'Too many requests'} when exceeded, accept {limit, windowMs} options, store state in memory.
-3. Wire the middleware into src/index.js (applied globally, configurable via env vars RATE_LIMIT and RATE_WINDOW_MS).
+3. Wire the middleware into src/index.js (applied globally, configurable via env vars RATE_LIMIT and RATE_WINDOW_MS). Note: package.json scripts.test already sets NODE_ENV=test — you can use this to disable or raise the rate limit during testing.
 4. Write tests for the rate limiter in test/rateLimit.test.js that verify: (a) requests below limit pass through, (b) requests over limit get 429, (c) window resets after windowMs.
-5. Run the full test suite (test/**/*.test.js) and make sure all tests pass — both the existing tests and your new ones.
+5. Run the full test suite using 'npm test' (which sets NODE_ENV=test automatically) and make sure all tests pass — both the existing tests and your new ones.
 
 Use absolute paths. The project is at $PROJECT_DIR/."
 

@@ -287,8 +287,16 @@ Start a task, stop mid-way (`clawbox stop`), restart, and ask the agent to conti
 ### T4 — Error recovery
 Deliberately introduce errors during a task (kill a dependency, corrupt a file, break the test suite). Does the agent notice, diagnose, and recover? Or does it spiral?
 
-### T5 — Real-world project onboarding ✅ 2026-03-26, re-runs 2026-03-29, 2026-03-30
+### T5 — Real-world project onboarding ✅ 2026-03-26, re-runs 2026-03-29, 2026-03-30, 2026-03-31
 Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask the agent to: (1) understand the codebase, (2) add a new feature, (3) write tests, (4) make sure existing tests pass. Measure quality and completeness.
+
+**Re-run (2026-03-31 22:42) — T5 scaffold fix: NODE_ENV=test in package.json → 14/14 pass:**
+- ✓ **14/14 pass** — first fully-clean T5 run since test was introduced
+- ✓ Middleware created, wired, tests written, completed in 161s (~2.7 min)
+- **Root cause of persistent 13/14 failure now fixed:** The T5 scaffold's `package.json` `scripts.test` was `node --test test/**/*.test.js` (no `NODE_ENV=test`). Agent correctly used `NODE_ENV=test` to raise the rate limit during testing — but only their own npm test invocations had this env set. T5's verification step using `npm test` would hit the same shell and get `NODE_ENV=test` from the package.json script. However the agent's middleware captured env vars at module load time (before `NODE_ENV=test` was visible to the Express app in test mode). Fixed: scaffold's `package.json` now has `"test": "NODE_ENV=test node --test test/**/*.test.js"` — guaranteed to set the env var before test execution.
+- **Also fixed:** baseline test runner updated from `node --test test/**/*.test.js` to `npm test` for consistency.
+- **Also updated:** task message clarifies `npm test` should be used (sets `NODE_ENV=test` automatically).
+- **Verdict:** T5 is now fully reliable and 14/14. ✅
 
 **Re-run (2026-03-30 20:42) — T5 test infra fix (npm test + proper pass/fail detection):**
 - ✓ Middleware created: `src/middleware/rateLimit.js` with per-IP tracking, configurable limit/window
