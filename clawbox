@@ -672,9 +672,19 @@ This is a handoff checkpoint — make TASK.md accurate so the next session can r
         gateway_pid=$(docker exec "$CONTAINER" sh -c "pgrep openclaw-gateway | head -1" 2>/dev/null || true)
         if [ -n "$gateway_pid" ]; then
           docker exec "$CONTAINER" kill -USR1 "$gateway_pid" 2>/dev/null || true
-          sleep 8  # Wait for gateway to reload
-        else
-          sleep 5
+        fi
+        # Poll for gateway health instead of fixed sleep — more reliable across cold/warm starts
+        local gw_ready=0
+        for _i in $(seq 1 30); do
+          sleep 2
+          if OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
+             openclaw status >/dev/null 2>&1; then
+            gw_ready=1
+            break
+          fi
+        done
+        if [ "$gw_ready" -eq 0 ]; then
+          echo "⚠ Gateway did not come back healthy after SIGUSR1 reload — handoff may use fallback agent"
         fi
         OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
           openclaw agent --agent main --session-id "$handoff_session" -m "$handoff_msg" || true
