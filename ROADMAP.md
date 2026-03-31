@@ -579,6 +579,17 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 
 ### T15 — Task timeout + handoff (2026-03-29, re-run 2026-03-31)
 
+**Run 4 (2026-03-31 04:40) — ISSUE-51 + ISSUE-52 fixes validated:**
+- ✓ **13/13 pass, 0 warn, 0 fail** — fully clean
+- ✓ Task started with `--timeout 1` flag, log path printed correctly (ISSUE-43 timestamped log)
+- ✓ No gateway connection failures — ISSUE-51 fix confirmed (gateway poll loop, not fixed sleep)
+- ✓ Timeout marker + handoff complete marker in log
+- ✓ Handoff agent response: 2144 bytes, high quality — found `blog-api-timeout-test`, inited git, committed work, updated TASK.md with 27/27 tests passing, clear handoff summary
+- ✓ TASK.md found in container workspace (correct project, not host fallback)
+- ✓ Lock cleaned up, new task starts immediately after timeout — ISSUE-52 fix confirmed
+- ✓ ISSUE-43 symlink behavior: `~/.clawbox-task.log` → timestamped log confirmed
+- **Verdict:** T15 fully reliable. Timeout + handoff is production-ready. ISSUE-51 and ISSUE-52 both confirmed fixed. ✅
+
 **Run 3 (2026-03-31 02:42) — ISSUE-51 + ISSUE-52 found:**
 - ✓ 10/13 pass, 0 warn, 3 fail
 - ✓ Timeout triggered after exactly 1 minute ✓
