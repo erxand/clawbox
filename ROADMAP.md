@@ -2,7 +2,7 @@
 
 ## Test Results
 
-### T8 — Context injection (2026-03-27, re-run 2026-03-29)
+### T8 — Context injection (2026-03-27, re-run 2026-03-29, re-run 2026-03-31)
 
 **Re-run (2026-03-29 22:41) — test script rewrite + fresh validation:**
 - ✓ **10/10 pass, 0 warn, 0 fail**
@@ -15,6 +15,14 @@
 - ✓ Missing message → usage hint
 - **Note:** Test script rewritten from `eval`-based unit tests (fragile, broke with complex quoting in cmd_run) to behavioral live-container tests. More reliable and tests actual behavior end-to-end.
 - **Verdict:** Context injection confirmed working across all modes. ✅
+
+**Re-run (2026-03-31 20:42) — stability check post all recent fixes:**
+- ✓ **10/10 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ `--context <file>`: agent references injected add/subtract code ✓
+- ✓ `--context <dir>`: all 3 symbols (add, subtract, PI) mentioned, node_modules excluded ✓
+- ✓ `--thinking minimal`, `--quiet`, `--json` all working ✓
+- ✓ Error paths (invalid path, missing message) still correct ✓
+- **Verdict:** T8 fully stable after all recent changes. ✅
 
 ### T2 — Context window stress (2026-03-26, re-run 2026-03-28, re-run 2026-03-30, re-run 2026-03-31)
 
@@ -487,7 +495,7 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - ⚠ Session isolation: shared agent memory by design (known behavior, documented)
 - **Verdict:** Session naming fully stable. ✅
 
-### T6 — Concurrent task handling ✅ 2026-03-26, re-run 2026-03-29
+### T6 — Concurrent task handling ✅ 2026-03-26, re-run 2026-03-29, re-run 2026-03-31
 Run two separate `clawbox run` commands simultaneously pointing at different workspaces. Do they interfere? Are sessions properly isolated?
 
 **Results (2026-03-26):**
@@ -499,6 +507,12 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 - ⚠️ The 2-second stagger between requests means task B waited for task A to complete before starting — this is the main finding
 - **Verdict:** Isolation is clean. But clawbox does NOT handle true parallelism — concurrent requests queue, not interleave. For users expecting background parallelism (e.g. running two builds at once), this is a documentation gap. The behavior is actually safe, but should be explicitly documented.
 - **Next step:** ISSUE-30 below — document the sequential-session behavior and add a warning to the CLI if a second request arrives while one is in-flight.
+
+**Re-run #3 (2026-03-31 20:40) — stability check post all ISSUE-49/50/51/52/53/54/55/56 fixes:**
+- ✓ **20/20 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ Part 1: Both tasks complete (A: 53s, B: 103s total wall time), 14/14 math tests, 19/19 strings tests
+- ✓ Part 2: Lock behavior fully intact — exits 1 with actionable UX, stale lock auto-cleaned
+- **Verdict:** T6 fully stable after all recent CI changes (ISSUE-49 through 56). ✅
 
 **Re-run #2 (2026-03-29 20:44) — session isolation fix — 20/20 pass, 0 warn, 0 fail:**
 - ✓ Root cause of persistent warn identified: both raw agent calls shared session history (no `--session-id`). Task B, running after Task A serialized through gateway, referenced Task A's work in its reply, triggering the cross-contamination grep.
