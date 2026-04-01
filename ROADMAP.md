@@ -345,6 +345,15 @@ Deliberately introduce errors during a task (kill a dependency, corrupt a file, 
 ### T5 — Real-world project onboarding ✅ 2026-03-26, re-runs 2026-03-29, 2026-03-30, 2026-03-31
 Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask the agent to: (1) understand the codebase, (2) add a new feature, (3) write tests, (4) make sure existing tests pass. Measure quality and completeness.
 
+**Re-run (2026-04-01 00:45) — stability check post all ISSUE-49/50/51/52/53/54/55/56 fixes:**
+- ✓ **12/12 pass, 0 warn, 0 fail** — all tests green
+- ✓ Middleware created: `src/middleware/rateLimit.js` with per-IP tracking, configurable limit/window, `setInterval.unref()` to prevent process leak
+- ✓ Middleware wired into `src/index.js`, tests written, all 12 tests pass (9 existing + 3 new rate limit tests)
+- ✓ Completed in 604s (~10 min) — longer than previous 161s run due to agent self-debugging
+- **Notable:** Agent encountered a test hang mid-run: `setInterval` in the rate limiter kept the Node.js `--test` runner alive indefinitely. Agent correctly diagnosed the root cause (cleanup interval preventing process exit) and fixed it with `cleanupInterval.unref()`. This is a subtle Node.js lifecycle gotcha that even experienced developers miss.
+- **Slight regression in thoroughness:** Agent wrote 3 rate limit tests (down from 5 in previous runs) — likely because the debugging iteration consumed context. All tests pass but fewer edge cases covered.
+- **Verdict:** T5 stable. Agent problem-solving on test infrastructure issues is solid. ✅
+
 **Re-run (2026-03-31 22:42) — T5 scaffold fix: NODE_ENV=test in package.json → 14/14 pass:**
 - ✓ **14/14 pass** — first fully-clean T5 run since test was introduced
 - ✓ Middleware created, wired, tests written, completed in 161s (~2.7 min)
