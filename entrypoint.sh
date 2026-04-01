@@ -1,8 +1,9 @@
 #!/bin/sh
 set -eu
 
-# Clear any stale NODE_OPTIONS that reference removed proxy-bootstrap.js
-export NODE_OPTIONS=""
+# Preserve NODE_OPTIONS from docker-compose.yml (contains --require for proxy-bootstrap.js)
+# Only clear if explicitly empty to avoid breaking egress proxy integration.
+export NODE_OPTIONS="${NODE_OPTIONS:-}"
 
 OPENCLAW_DIR="$HOME/.openclaw"
 WORKSPACE_DIR="$OPENCLAW_DIR/workspace"
@@ -134,11 +135,9 @@ SOCAT_PID=$!
 echo "▶ Virtual memory cap: delegated to exec-tool children (ISSUE-18 pending)"
 
 # ── NODE_OPTIONS for gateway ──────────────────────────────────────────
-# NODE_OPTIONS contains --require for proxy-bootstrap.js which the gateway
-# needs to route API calls through the Anthropic-only proxy. We keep it.
-# (Previously this unset NODE_OPTIONS to remove --max-old-space-size=384
-# which caused GC thrashing — that's no longer in docker-compose.yml.)
-# (NODE_OPTIONS intentionally empty — no proxy bootstrap needed)
+# NODE_OPTIONS contains --require for proxy-bootstrap.js which configures
+# undici (Node.js native fetch) to route through the egress proxy.
+# This ensures the Anthropic SDK's fetch() calls go through the allowlist proxy.
 
 # ── Start the gateway with auto-restart loop ─────────────────────────
 # openclaw's `config set` can trigger a full process restart (SIGUSR1

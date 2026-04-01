@@ -1,4 +1,4 @@
-.PHONY: start stop status logs shell tui chat backup restore upgrade build-airgap test-isolation clean install cp help
+.PHONY: start stop status logs shell tui chat backup restore upgrade build-airgap test-isolation test-egress clean install cp help
 
 COMPOSE := docker compose
 CONTAINER := clawbox-work
@@ -94,6 +94,9 @@ test-isolation: ## Verify network isolation is working
 	@docker exec $(CONTAINER) sh -c "curl -s --max-time 5 https://example.com" && echo "FAIL: internet accessible" || echo "PASS: internet blocked"
 	@echo "Testing that Anthropic API is reachable via proxy..."
 	@OPENCLAW_GATEWAY_URL=$(GATEWAY_URL) OPENCLAW_GATEWAY_TOKEN=$(GATEWAY_TOKEN) openclaw gateway health && echo "PASS: gateway healthy" || echo "FAIL: gateway unreachable"
+
+test-egress: ## Test egress isolation (pre-proxy vuln check + post-proxy lockdown)
+	@bash tests/T-egress-isolation.sh
 
 clean: ## Stop container and remove volume (destructive! FORCE=1 skips confirmation)
 	@if [ "$(FORCE)" = "1" ]; then \

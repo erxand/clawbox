@@ -33,6 +33,9 @@ ENV HOME=/home/node
 ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
 ENV PATH="/home/node/.npm-global/bin:${PATH}"
 
+# Egress proxy bootstrap — injected via NODE_OPTIONS to route native fetch through proxy
+COPY --chown=node:node proxy-bootstrap.js /home/node/proxy-bootstrap.js
+
 # Seed files for first-run workspace initialization
 COPY --chown=node:node seed/ /home/node/seed/
 

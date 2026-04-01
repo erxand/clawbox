@@ -1,8 +1,36 @@
+networks:
+  clawbox-internal:
+    internal: true   # NO external routing — containers here cannot reach internet directly
+  clawbox-egress:    # Only connects clawbox-work to the proxy
+    driver: bridge
+
 services:
+  clawbox-egress-proxy:
+    build:
+      context: proxy
+    container_name: clawbox-egress-proxy
+    restart: unless-stopped
+    networks:
+      - clawbox-egress
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').createConnection(8888,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
   clawbox-work:
     build: .
     container_name: clawbox-work
     restart: "no"
+
+    depends_on:
+      clawbox-egress-proxy:
+        condition: service_healthy
+
+    networks:
+      - clawbox-internal  # No direct internet
+      - clawbox-egress    # Can reach proxy only
 
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-18790}:18789"  # Gateway (loopback-only)
@@ -33,6 +61,11 @@ services:
       # These env vars are picked up automatically by git and npm.
       - GIT_CONFIG_GLOBAL=/home/node/.openclaw/.gitconfig
       - NPM_CONFIG_CACHE=/home/node/.openclaw/.npm-cache
+      # ── Egress proxy: route ALL outbound HTTPS through the allowlist proxy ──
+      - HTTPS_PROXY=http://clawbox-egress-proxy:8888
+      - HTTP_PROXY=http://clawbox-egress-proxy:8888
+      # Also set for Node.js native fetch / undici (used by Anthropic SDK)
+      - NODE_OPTIONS=--require /home/node/proxy-bootstrap.js
 
     # ── Resource limits ─────────────────────────────────────────────
     deploy:
