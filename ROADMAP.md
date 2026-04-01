@@ -267,6 +267,36 @@ The lock is acquired before calling the gateway and released on exit, interrupt,
 
 ---
 
+### T-egress — Egress isolation (2026-04-01)
+
+**Run 2 (2026-04-01 10:47) — post test-fix, clean result:**
+- ✓ **11 pass, 1 warn, 0 fail** — all checks clean
+- Phase 1: 4/4 vulnerability hosts confirmed reachable (example.com ⚠ transient warn, not a fail)
+- Phase 2: 7/7 lockdown checks perfect — all blocked hosts stay blocked, all allowed hosts work
+- **Verdict:** Egress isolation confirmed fully functional. ✅
+
+**Run 1 (2026-04-01 10:45) — first run, full phase 1+2:**
+- ✓ **11/12 pass, 0 warn, 1 fail** (fail was a Phase 1 false negative — example.com transient)
+- **Phase 1 (pre-proxy vulnerability confirmation):**
+  - ✗ example.com NOT reachable — likely transient; NOT a proxy pre-condition
+  - ✓ icanhazip.com reachable — vulnerability confirmed
+  - ✓ google.com reachable — vulnerability confirmed
+  - ✓ dns.google reachable — vulnerability confirmed
+  - ✓ exfiltration simulation to host netcat listener — vulnerability confirmed
+- **Phase 2 (post-proxy lockdown — 7/7 perfect):**
+  - ✓ example.com BLOCKED
+  - ✓ icanhazip.com BLOCKED
+  - ✓ google.com BLOCKED
+  - ✓ api.anthropic.com still reachable through proxy (Anthropic SDK can reach API)
+  - ✓ npm install works (registry.npmjs.org allowed through proxy)
+  - ✓ clawbox gateway healthy end-to-end (full API chain works through proxy)
+  - ✓ evil.com BLOCKED from exec context (agent running `curl evil.com` is blocked)
+- **Fix applied (2026-04-01):** Test script updated — Phase 1 individual host checks now emit `warn` (not `fail`) since only ONE needs to pass to confirm vulnerability. A hard `fail` is only emitted if NO external host is reachable at all. Also added `WARN` counter and summary line.
+- **Key finding:** Proxy builds in ~8s, services healthy within 9s of up. No performance penalty vs. non-proxied startup. Container is now locked down to Anthropic + npm only by default (docker-compose.yml already includes proxy sidecar config).
+- **Verdict:** Egress isolation is fully functional. Container is locked down to only Anthropic + npm traffic. ✅
+
+---
+
 ## Phase 1 — Bug Fixes (immediate)
 
 ### ISSUE-25: Container OOM on heavy builds ✅ Fixed

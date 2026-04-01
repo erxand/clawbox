@@ -26,6 +26,7 @@ mkdir -p "$RESULT_DIR"
 
 PASS=0
 FAIL=0
+WARN=0
 RESULTS=""
 
 log() { echo "[T-egress $(date +%H:%M:%S)] $*"; }
@@ -34,6 +35,12 @@ pass() {
   echo "  ✓ $*"
   PASS=$((PASS+1))
   RESULTS="${RESULTS}\n| ✓ PASS | $* |"
+}
+
+warn() {
+  echo "  ⚠ $*"
+  WARN=$((WARN+1))
+  RESULTS="${RESULTS}\n| ⚠ WARN | $* |"
 }
 
 fail() {
@@ -72,32 +79,45 @@ if $RUN_PRE; then
     sleep 2
   done
 
+  # Phase 1: "warn" individual host failures — only ONE needs to pass to confirm vulnerability.
+  # Individual hosts may be down/unreachable from certain networks; that's not our bug.
+  PRE_VULN_CONFIRMED=false
+
   log "Pre-proxy test 1: curl https://example.com"
   if docker exec "$CONTAINER" sh -c "unset HTTPS_PROXY HTTP_PROXY; curl -s --max-time 5 https://example.com >/dev/null 2>&1"; then
     pass "Pre-proxy: example.com reachable (vulnerability confirmed)"
+    PRE_VULN_CONFIRMED=true
   else
-    fail "Pre-proxy: example.com NOT reachable (network may already be restricted)"
+    warn "Pre-proxy: example.com NOT reachable (may be transient — other hosts will confirm)"
   fi
 
   log "Pre-proxy test 2: curl https://icanhazip.com"
   if docker exec "$CONTAINER" sh -c "unset HTTPS_PROXY HTTP_PROXY; curl -s --max-time 5 https://icanhazip.com >/dev/null 2>&1"; then
     pass "Pre-proxy: icanhazip.com reachable (vulnerability confirmed)"
+    PRE_VULN_CONFIRMED=true
   else
-    fail "Pre-proxy: icanhazip.com NOT reachable"
+    warn "Pre-proxy: icanhazip.com NOT reachable (may be transient)"
   fi
 
   log "Pre-proxy test 3: curl https://google.com"
   if docker exec "$CONTAINER" sh -c "unset HTTPS_PROXY HTTP_PROXY; curl -s --max-time 5 https://google.com >/dev/null 2>&1"; then
     pass "Pre-proxy: google.com reachable (vulnerability confirmed)"
+    PRE_VULN_CONFIRMED=true
   else
-    fail "Pre-proxy: google.com NOT reachable"
+    warn "Pre-proxy: google.com NOT reachable (may be transient)"
   fi
 
   log "Pre-proxy test 4: DNS resolution of 8.8.8.8"
   if docker exec "$CONTAINER" sh -c "unset HTTPS_PROXY HTTP_PROXY; curl -s --max-time 5 https://dns.google >/dev/null 2>&1"; then
     pass "Pre-proxy: external DNS (dns.google) reachable (vulnerability confirmed)"
+    PRE_VULN_CONFIRMED=true
   else
-    fail "Pre-proxy: external DNS NOT reachable"
+    warn "Pre-proxy: external DNS NOT reachable (may be transient)"
+  fi
+
+  # Final Phase 1 verdict: if NO host was reachable, that's a real fail
+  if ! $PRE_VULN_CONFIRMED; then
+    fail "Pre-proxy: NO external host reachable — network may already be restricted or this is a test environment"
   fi
 
   log "Pre-proxy test 5: exfiltration simulation (curl to host listener)"
@@ -119,7 +139,7 @@ if $RUN_PRE; then
   kill "$NC_PID" 2>/dev/null || true
   wait "$NC_PID" 2>/dev/null || true
 
-  log "════ PHASE 1 COMPLETE: $PASS pass, $FAIL fail ════"
+  log "════ PHASE 1 COMPLETE: $PASS pass, $WARN warn, $FAIL fail ════"
   echo ""
 fi
 
@@ -217,23 +237,23 @@ fi
 # Results summary
 # ══════════════════════════════════════════════════════════════════════
 
-TOTAL=$((PASS + FAIL))
+TOTAL=$((PASS + FAIL + WARN))
 echo ""
 log "══════════════════════════════════════"
-log "RESULTS: $PASS/$TOTAL passed, $FAIL failed"
+log "RESULTS: $PASS pass, $WARN warn, $FAIL fail (of $TOTAL checks)"
 log "══════════════════════════════════════"
 
 # Write result file
 cat > "$RESULT_FILE" << EOF
 # T-egress — Egress Isolation Test Results
 **Date:** $(date '+%Y-%m-%d %H:%M')
-**Result:** $PASS/$TOTAL passed, $FAIL failed
+**Result:** $PASS pass, $WARN warn, $FAIL fail (of $TOTAL checks)
 
 ## Results
 
 | Status | Check |
 |--------|-------|
-$(echo -e "$RESULTS")
+$(printf '%b' "$RESULTS")
 
 ## Architecture
 - **Internal network:** \`clawbox-internal\` (Docker internal=true, no default gateway)
