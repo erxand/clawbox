@@ -149,7 +149,19 @@
 - ✓ Re-run #4 (2026-03-31 22:47) confirms continued stability after ISSUE-49/50/53/54 fixes — 59s diagnosis, clean pass
 - No issues observed — agent performs consistently well on straightforward error recovery across all runs
 
-### T1 — Long-running task (2026-03-27 runs + 2026-03-28 re-run + 2026-03-29 re-run + 2026-03-30 re-run + 2026-03-31 re-run)
+### T1 — Long-running task (2026-03-27 runs + 2026-03-28 re-run + 2026-03-29 re-run + 2026-03-30 re-run + 2026-03-31 re-run + 2026-04-01 re-run)
+
+**Run 7 (2026-04-01 04:46) — ISSUE-57 fix: test isolation → 17/17 passing:**
+- ✓ **Tests passing: 17/17 — all green** (previous runs: 17/18 partial)
+- ✓ TASK.md created with full 4-phase plan, phase 1 shown complete
+- ✓ 4 git commits: scaffold → backend → tests → frontend
+- ✓ Port 3000: HTTP 401 at /api/tasks (auth working correctly)
+- ✓ Port 8080: HTTP 200 (frontend serving)
+- ✓ Agent correctly understood test isolation requirement: fresh in-memory DB per run, unique usernames per test (`testuser-` + Date.now())
+- ✓ Agent even wrote "Tests are independent - you can run them multiple times!" in test output
+- **Root cause of prior 17/18:** "Register new user" test conflicted with auth setup step that already registered the same static username. Test ordering dependency caused the 18th test to fail on subsequent runs.
+- **Fix (ISSUE-57):** T1 task message now explicitly requires test independence: fresh DB, unique usernames, order-independent tests. With this guidance, agent built a properly isolated test suite.
+- **Verdict:** T1 now reliably achieves full test pass. ISSUE-57 confirmed fixed. ✅
 
 **Run 6 (2026-03-31 10:41) — stability check + ISSUE-53/54 found and fixed:**
 - ✓ TASK.md created with full 4-phase plan (all phases ✅)
@@ -603,6 +615,12 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 **Exit codes:** 0 = all critical checks pass; 1 = at least one ✗ failure.
 
 **Bug fixed during implementation:** Gateway health inner `&&/||` captured openclaw stdout into the result variable, making string equality fail even when gateway was healthy. Fixed by using `if openclaw ... >/dev/null; then` instead.
+
+### ISSUE-57: T1 persistent 17/18 test failure — test ordering / shared state ✅ Fixed 2026-04-01
+**Problem:** T1 consistently produced 17/18 passing tests across multiple runs (runs 5, 6, and 7). The "Register new user" test failed because auth setup earlier in the suite already registered the same static username to the shared in-memory database. A second `POST /register` with the same username returns a conflict error (HTTP 400 or 409), failing the test. This is a classic "tests that run fine in isolation but fail when sharing state" pattern.
+**Symptom:** TASK.md would show "18/18 tests passing" (agent self-reported, optimistic) but actual `npm test` output showed `Failed: 1` — "Register new user" test. Ran identically across every run since the issue was introduced, suggesting the test was always broken on second-and-later execution.
+**Fix:** Added explicit test isolation requirement to the T1 task message: "each test must be independent and order-independent — use a fresh in-memory database per test run (or before/after hooks to reset state), use unique usernames per test (e.g. 'testuser-' + Date.now())". Agent correctly understood the requirement and implemented: fresh in-memory SQLite DB (`:memory:`) for the test runner, `Date.now()`-based unique usernames in each test. Agent even documented this in test output: "Tests are independent - you can run them multiple times!"
+**Result:** Run 7 (2026-04-01 04:46) — 17/17 tests passing, all green. ✅
 
 ### ISSUE-56: T3 `✗ No new git commits` false negative when session 1 never inits git ✅ Fixed 2026-03-31
 **Problem:** T3's "new git commits" check compares S1 vs S2 commit counts in `$WORKSPACE/$PROJECT_NAME`, falling back to workspace root if the project dir has no git repo. When session 1's message didn't ask for git init, the project-level `.git` didn't exist. Both S1 and S2 git logs captured the workspace root (T1 taskman commits), which were identical in both sessions → false "no new commits" fail.
