@@ -562,7 +562,16 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 - 3 warns were test script false-positives: "add"/"subtract" in agent prose matched cross-contamination regex; `grep -c || echo 0` double-output bug. Both fixed in test script.
 - **Verdict:** Lock mechanism works end-to-end. ISSUE-30/37 confirmed working post-fix. ✅
 
-### T16 — `clawbox doctor` validation ✅ 2026-03-30, re-run 2026-03-31
+### T16 — `clawbox doctor` validation ✅ 2026-03-30, re-runs 2026-03-31, 2026-04-01
+
+**Re-run (2026-04-01 06:47) — stability check (2 days post ISSUE-49/50 fixes):**
+- ✓ **27/27 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ Phase 1 (healthy container): 21/21 internal checks pass, all section headers present, healthy footer
+- ✓ Phase 2 (stopped container): correctly reports ✗ container/port/gateway failures; Fail: 3
+- ✓ Phase 3 (stale lock): detects dead PID 99999999 as `⚠ stale lock file found`, exits 0
+- ✓ Phase 4 (final healthy): clean exit 0 after lock cleanup
+- ✓ Phase 5 (edge cases): `GATEWAY_PORT=19999` correctly reports port 19999 unreachable
+- **Verdict:** `clawbox doctor` continues to be fully stable. All phases, edge cases, and exit codes correct. ✅
 
 **Re-run (2026-03-31 06:41) — stability check post ISSUE-49/50 fixes:**
 - ✓ **27/27 pass, 0 warn, 0 fail** — perfect score maintained
