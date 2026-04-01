@@ -458,7 +458,12 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - Agent correctly used the verify-fix-verify loop: ran server → found error → fixed → ran server again; ran tests → found error → fixed → ran tests again. No spiraling, no giving up.
 - Phase 2 open item "self-recovery prompts" confirmed working well. Agent handles multi-layered errors systematically without any special scaffolding.
 
-### T12 — cancel command (2026-03-28, re-run 2026-03-30) ✅
+### T12 — cancel command (2026-03-28, re-run 2026-03-30, re-run 2026-04-01) ✅
+
+**Re-run (2026-04-01 08:46) — stability check:**
+- ✓ **18/18 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ All cancel scenarios: idle no-op, stale lock cleanup, live task SIGTERM, UX hints: all green
+- **Verdict:** T12 fully stable. ✅
 
 **Re-run (2026-03-30 16:44) — stability check post ISSUE-43 (timestamped logs):**
 - ✓ **18/18 pass, 0 warn, 0 fail** — perfect score maintained
@@ -476,7 +481,12 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - ✓ `task-status` and `assert_not_busy` show `clawbox cancel` hint (not raw `kill <pid>`)
 - **Verdict:** cancel command works end-to-end. UX is now first-class — no raw PIDs exposed to the user. ✅
 
-### T13 — Read-only rootfs validation ✅ 2026-03-28, re-runs 2026-03-29 + 2026-03-30
+### T13 — Read-only rootfs validation ✅ 2026-03-28, re-runs 2026-03-29 + 2026-03-30, re-run 2026-04-01
+
+**Re-run (2026-04-01 08:47) — stability check:**
+- ✓ **15/15 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ All 12 checks: ReadonlyRootfs flag, write rejection, system paths, tmpfs mounts, workspace volume, git/npm redirects, agent functionality: all green
+- **Verdict:** T13 fully stable. ✅
 
 **Re-run (2026-03-30 20:41) — T13 false-positive warn fix:**
 - ✓ **15/15 pass, 0 warn, 0 fail** — perfect score (was 14/15 with 1 warn previously)
@@ -485,7 +495,13 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 
 **Previous runs (2026-03-28 to 2026-03-30):** Consistent 14/15, 0 fail, 1 warn — all due to the overlay2 `/proc/mounts` false-positive only.
 
-### T11 — Background task mode (2026-03-28, rewrite+re-run 2026-03-30) ✅
+### T11 — Background task mode (2026-03-28, rewrite+re-run 2026-03-30, re-run 2026-04-01) ✅
+
+**Re-run (2026-04-01 08:46) — stability check:**
+- ✓ **11/11 pass, 1 warn, 0 fail** — same pattern as prior run
+- ✓ Non-blocking start (0s), timestamped log, symlink, task completion, lock cleanup, concurrent warning: all green
+- ⚠ Same benign stale-lock warn: fast task completes before lock probe — expected behavior
+- **Verdict:** T11 fully stable. ✅
 
 **Re-run (2026-03-30 16:43) — T11 rewrite + stability check post ISSUE-43 (timestamped logs):**
 - ✓ **11/11 pass, 1 warn, 0 fail**
@@ -509,7 +525,12 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - ⚠️ `clawbox task` took 13s to "return" in test — because the agent ran so fast (simple task), it actually completed before the 5s threshold. True long tasks would return immediately. This is expected behavior for fast tasks.
 - **Verdict:** Background task mode is functional. ISSUE-36 is the only real bug, now fixed. ✅
 
-### T9 — Output modes (2026-03-27, re-run 2026-03-30) ✅
+### T9 — Output modes (2026-03-27, re-run 2026-03-30, re-run 2026-04-01) ✅
+**Re-run (2026-04-01 08:45) — stability check:**
+- ✓ **18/18 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ `--quiet`/`-q`, `--json`/`-j`, context_files count, live e2e: all green
+- **Verdict:** T9 fully stable. ✅
+
 **Re-run (2026-03-30 06:40) — stability check after ISSUE-44 (rate-limit detection added to `clawbox run`):**
 - ✓ **18/18 pass, 0 warn, 0 fail** — perfect score maintained
 - ✓ `--quiet` / `-q`: response on stdout, no banners
@@ -518,7 +539,12 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - ✓ Live e2e: quiet + json modes confirmed against running container
 - **Verdict:** Output modes fully stable after all recent CLI changes. ✅
 
-### T10 — Session naming (2026-03-27, re-run 2026-03-30) ✅
+### T10 — Session naming (2026-03-27, re-run 2026-03-30, re-run 2026-04-01) ✅
+**Re-run (2026-04-01 08:45) — stability check:**
+- ✓ **11/11 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ Session continuity (ZEBRA42 recalled across two calls), isolation (session B has no prior history), flags, JSON output: all green
+- **Verdict:** T10 fully stable. ✅
+
 **Re-run (2026-03-30 06:41) — stability check:**
 - ✓ **10/10 pass, 1 warn, 0 fail** — same result as original
 - ✓ `--session`/`-s`: flag accepted, `--session-id` wired to agent
