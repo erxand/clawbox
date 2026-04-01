@@ -82,6 +82,15 @@
 - **Verdict:** ISSUE-41 confirmed fixed. Multi-session continuity is now reliable end-to-end. ✅
 - **Endpoints after session 2 (despite rebuild):** All working — GET /books ✓, GET /books/1 ✓, POST /books ✓, DELETE /books/1 ✓ (agent completed the full API even though it rebuilt)
 
+**Run 12 (2026-03-31 18:42) — T3 ISSUE-56 fix: git init in session 1 message:**
+- ✓ **4/4 assessment checks pass — first fully clean T3 run with all four checks ✓**
+- ✓ Session 1 (124s): TASK.md at correct path, git initialized, 2 commits (initial + TASK.md)
+- ✓ Session 2 (205s): TASK.md checkboxes updated (S1: 10x → S2: 17x), 4 new commits (S1: 4 → S2: 8)
+- ✓ All endpoints verified: GET /books ✓, GET /books/1 ✓, POST /books ✓ (validation error = correct), DELETE /books/1 ✓
+- **Root cause of prior `✗ No new git commits` false negative (ISSUE-56):** Session 1 message didn't explicitly ask for git init. Agent's TASK.md showed `[ ] Initialize git repository` (unchecked), so no project-level git repo existed. S1/S2 git log comparison fell back to workspace root (same 5 T1 commits both times) → false "no new commits" fail.
+- **Fix applied (2026-03-31):** Session 1 message now includes "Initialize a git repository in the project dir and commit your initial work." Agent reliably inits git, both sessions compare within the project-level repo.
+- **Verdict:** T3 is fully reliable. All four assessment checks (TASK.md created, endpoints verified, checkboxes updated, new commits) passing consistently. ✅
+
 **Run 11 (2026-03-31) — ISSUE-55 fix validated:**
 - ✓ Session 1: TASK.md created at correct path (101s), Phase 1 all `[x]`, Phase 2 unchecked
 - ✓ Session 2: All endpoints verified — GET /books ✓, GET /books/1 ✓, POST /books ✓ (validation), DELETE /books/1 ✓ (164s)
@@ -560,6 +569,12 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 **Exit codes:** 0 = all critical checks pass; 1 = at least one ✗ failure.
 
 **Bug fixed during implementation:** Gateway health inner `&&/||` captured openclaw stdout into the result variable, making string equality fail even when gateway was healthy. Fixed by using `if openclaw ... >/dev/null; then` instead.
+
+### ISSUE-56: T3 `✗ No new git commits` false negative when session 1 never inits git ✅ Fixed 2026-03-31
+**Problem:** T3's "new git commits" check compares S1 vs S2 commit counts in `$WORKSPACE/$PROJECT_NAME`, falling back to workspace root if the project dir has no git repo. When session 1's message didn't ask for git init, the project-level `.git` didn't exist. Both S1 and S2 git logs captured the workspace root (T1 taskman commits), which were identical in both sessions → false "no new commits" fail.
+**Symptom (Run 12, 2026-03-31):** Session 2 made 4 real commits in the project repo, TASK.md was updated, all endpoints worked — but assessment showed `✗ No new git commits from session 2 (S1: 5 commits, S2: 5 commits — same)`.
+**Fix:** Added "Initialize a git repository in the project dir and commit your initial work" to session 1's task message. Agent reliably inits git now, and both S1/S2 log comparisons operate within the project-level repo.
+**Result:** Run 12 (2026-03-31 18:42) — 4/4 assessment checks pass. ✅
 
 ### ISSUE-55: Session 2 completes work but never updates TASK.md or commits code ✅ Fixed 2026-03-31
 

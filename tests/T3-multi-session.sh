@@ -80,7 +80,7 @@ docker exec "$CONTAINER" sh -c "
 " 2>/dev/null || true
 log "Workspace cleaned."
 
-SESSION1_MSG="Create a NEW project directory called '${PROJECT_NAME}' in /home/node/.openclaw/workspace/ and start building an Express API for a bookstore there. Create the project structure and the first endpoint: GET /books that returns a hardcoded list of 3 books. Save your progress plan to TASK.md inside ${PROJECT_NAME}/ then stop — I'll continue this task in a new session."
+SESSION1_MSG="Create a NEW project directory called '${PROJECT_NAME}' in /home/node/.openclaw/workspace/ and start building an Express API for a bookstore there. Create the project structure and the first endpoint: GET /books that returns a hardcoded list of 3 books. Initialize a git repository in the project dir and commit your initial work. Save your progress plan to TASK.md inside ${PROJECT_NAME}/ then stop — I'll continue this task in a new session."
 
 log "Sending session 1 message..."
 SESSION1_START=$(date +%s)
