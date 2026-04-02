@@ -69,10 +69,12 @@ restore: ## Restore from tar.gz (usage: make restore FILE=path/to/backup.tar.gz)
 	fi
 	@echo "Restoring from $(FILE)..."
 	@$(COMPOSE) down 2>/dev/null || true
+	@ABSFILE="$(FILE)"; \
+	case "$$ABSFILE" in /*) ;; *) ABSFILE="$$(pwd)/$$ABSFILE" ;; esac; \
 	docker run --rm \
 		-v $(VOLUME):/data \
-		-v $$(pwd)/$(FILE):/backup.tar.gz:ro \
-		alpine sh -c "rm -rf /data/* && tar xzf /backup.tar.gz -C /data"
+		-v "$$ABSFILE":/backup.tar.gz:ro \
+		alpine sh -c "rm -rf /data/* && tar xzf /backup.tar.gz -C /data && chown -R 1000:1000 /data"
 	@echo "Restored. Run 'make start' to start the container."
 
 upgrade: ## Rebuild image with latest openclaw and restart

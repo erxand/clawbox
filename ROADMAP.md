@@ -699,6 +699,36 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 
 **Bug fixed during implementation:** Gateway health inner `&&/||` captured openclaw stdout into the result variable, making string equality fail even when gateway was healthy. Fixed by using `if openclaw ... >/dev/null; then` instead.
 
+### T17 — Backup & Restore validation (2026-04-02) ✅
+
+**Run 1 (2026-04-02 10:49) — first run, found ISSUE-61:**
+- ✓ Backup creates valid tar.gz (50MB, contains all workspace files)
+- ✓ Backup contains AGENTS.md and injected canary files
+- ✗ Restore FAILED — `tar: invalid magic` error
+- ✗ Canary files NOT restored, AGENTS.md only present from seed (not backup)
+- ✗ File count dropped from 1221 → 25 (only seed files survived)
+- **Root cause (ISSUE-61):** Makefile `restore` target always prepends `$(pwd)/` to FILE path. When `clawbox restore /absolute/path/backup.tar.gz` is called, Docker gets `-v $(pwd)//absolute/path/...` — double-rooted path. Docker silently creates an empty file at that path and `tar` gets an empty/invalid archive.
+- **Second bug:** Restore runs `tar xzf` inside alpine as root. Extracted files are owned by root, but container runs as `node` (UID 1000). All restored files would have wrong ownership → agent can't read/write them.
+
+**Run 2 (2026-04-02 10:50) — ISSUE-61 fix validated:**
+- ✓ **19/19 pass, 0 warn, 0 fail** — perfect score
+- ✓ Backup: tar.gz created, non-trivial size, contains canary + AGENTS.md
+- ✓ Restore: exit 0, container healthy after restore
+- ✓ Canary file restored with exact content match
+- ✓ Deep nested directory structure preserved
+- ✓ AGENTS.md restored with correct content
+- ✓ File count preserved (27 → 27)
+- ✓ File ownership correct (node:node) after restore
+- ✓ Edge cases: no-args usage hint, bad-path error message
+- **Verdict:** Backup/restore fully functional after fix. ISSUE-61 confirmed fixed. ✅
+
+### ISSUE-61: Makefile restore breaks on absolute paths + wrong file ownership ✅ Fixed 2026-04-02
+**Problem:** Two bugs in the `restore` Makefile target:
+1. **Path handling:** `docker run -v $(pwd)/$(FILE):/backup.tar.gz:ro` always prepends `$(pwd)/` — when FILE is an absolute path (e.g. from `clawbox restore /full/path/backup.tar.gz`), Docker gets a double-rooted path like `/Users/foo//Users/foo/backups/backup.tar.gz`. Docker silently creates an empty bind-mount, and `tar xzf` fails with "invalid magic" (empty file).
+2. **Ownership:** `tar xzf` inside alpine extracts files as root. The container runs as `node` (UID 1000). Restored files would be root-owned and potentially unreadable/unwritable by the agent.
+**Impact:** All `clawbox restore` calls with absolute paths (which `clawbox` CLI always generates) were silently broken. Users backing up and restoring would lose all data.
+**Fix:** (1) Makefile restore now detects absolute vs relative paths: `case "$$ABSFILE" in /*) ;; *) ABSFILE="$$(pwd)/$$ABSFILE" ;; esac` — only prepends `$(pwd)` for relative paths. (2) Added `chown -R 1000:1000 /data` after `tar xzf` to ensure correct ownership.
+
 ### ISSUE-59: T2 workspace pollution — agent finds pre-existing stats() in old express-oss/onboarding-test dirs ✅ Fixed 2026-04-02
 **Problem:** Even though ISSUE-58 added timestamped directories for T2, old `express-oss` and `onboarding-test` directories from prior T2/T5 runs persisted in the container workspace. The agent would find pre-existing `stats()` implementations and `test-router-stats.js` files in those old directories, report "method already exists," and skip writing new code. The test appeared to pass (4/4 assessment checks) but the agent didn't actually write anything.
 **Symptom (Runs 2026-04-01):** Agent output shows "The method already exists at line 523" and "The test file is already created" — referencing old `express-oss/` and `onboarding-test/` dirs, not the timestamped dir.
