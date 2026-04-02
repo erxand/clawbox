@@ -24,7 +24,25 @@
 - ✓ Error paths (invalid path, missing message) still correct ✓
 - **Verdict:** T8 fully stable after all recent changes. ✅
 
-### T2 — Context window stress (2026-03-26, re-run 2026-03-28, re-run 2026-03-30, re-run 2026-03-31)
+### T2 — Context window stress (2026-03-26, re-run 2026-03-28, re-run 2026-03-30, re-run 2026-03-31, re-run 2026-04-01, re-run 2026-04-02)
+
+**Run 6 (2026-04-02 08:40) — ISSUE-59 + ISSUE-60 fixes applied, rate limited:**
+- ✗ Agent received `⚠️ API rate limit reached` immediately — could not complete task
+- ✓ ISSUE-59 fix confirmed: stale `express-oss` and `onboarding-test` dirs cleaned at start
+- ✓ ISSUE-60 fix confirmed: express cloned on host, docker cp'd into container successfully (141 JS files)
+- ✓ Timestamped dir `express-oss-2026-04-02-08-40` created fresh with clean codebase
+- **Verdict:** Infrastructure fixes working (workspace clean, host-side clone, docker cp + chown). Agent needs a rate-limit-free window to validate the full test. ⚠️ (rate limited — needs re-run)
+
+**Run 5 (2026-04-01 16:46) — stability check + ISSUE-58 found and fixed:**
+- ✓ **4/4 assessment checks pass** — test file created, stats() in correct location, node_modules clean, within timeout
+- ✓ Completed in 226s (~3.7 min) — within normal range
+- ✓ stats() added to CORRECT file (Express lib/router/index.js)
+- ✓ node_modules/router/ not modified
+- ⚠ Only 13 JS files counted (source-only, no node_modules installed) vs 141 in original run — less stressful but still valid routing exercise
+- ⚠ Agent found pre-existing stats() method at line 523 (from prior runs) — reported it as already implemented and ran tests. Test result is valid but **the agent didn't write fresh code** — inflated success.
+- **Root cause (ISSUE-58):** T2 script checks `if [ ! -d 'express-oss' ]` and skips re-clone on subsequent runs. Any modifications from prior tests (stats() method, test-router-stats.js) persist in the working tree. Agent correctly reads and uses pre-existing work — but the test's purpose is to measure the *writing* capability, not just reading/testing.
+- **Fix applied (2026-04-01):** T2 now runs `git checkout -- . && git clean -fd` to reset express-oss to pristine state before each run. This guarantees the agent starts from a clean codebase every time, as intended.
+- **Verdict:** Fix is in place. Next run will validate that the agent writes stats() from scratch on a clean codebase. ✅ (fix applied)
 
 **Run 1 (2026-03-26):**
 - ✓ Agent navigated 141-file Express.js codebase selectively (no context overload)
@@ -680,6 +698,21 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 **Exit codes:** 0 = all critical checks pass; 1 = at least one ✗ failure.
 
 **Bug fixed during implementation:** Gateway health inner `&&/||` captured openclaw stdout into the result variable, making string equality fail even when gateway was healthy. Fixed by using `if openclaw ... >/dev/null; then` instead.
+
+### ISSUE-59: T2 workspace pollution — agent finds pre-existing stats() in old express-oss/onboarding-test dirs ✅ Fixed 2026-04-02
+**Problem:** Even though ISSUE-58 added timestamped directories for T2, old `express-oss` and `onboarding-test` directories from prior T2/T5 runs persisted in the container workspace. The agent would find pre-existing `stats()` implementations and `test-router-stats.js` files in those old directories, report "method already exists," and skip writing new code. The test appeared to pass (4/4 assessment checks) but the agent didn't actually write anything.
+**Symptom (Runs 2026-04-01):** Agent output shows "The method already exists at line 523" and "The test file is already created" — referencing old `express-oss/` and `onboarding-test/` dirs, not the timestamped dir.
+**Fix:** T2 now cleans all stale `express-oss*` and `onboarding-test*` directories at the start of each run. Task message updated to explicitly tell agent to "work ONLY inside the specified directory" and to add a "NEW" stats() method.
+
+### ISSUE-60: T2 git clone fails inside container due to egress proxy blocking GitHub ✅ Fixed 2026-04-02
+**Problem:** After the egress proxy was added (2026-04-01), T2's `git clone https://github.com/expressjs/express` inside the container fails with `CONNECT tunnel failed, response 403` — the proxy only allows Anthropic and npm traffic. T2 was the only test that cloned repos inside the container; other tests (T1, T3, T5) scaffold their projects via `docker exec` without cloning external repos.
+**Fix:** T2 now clones express on the HOST (unrestricted internet), then uses `docker cp` + `docker exec -u root chown` to place it in the container workspace. The `chown` requires `-u root` because `docker cp` copies files as root but the container runs as `node`.
+
+### ISSUE-58: T2 script doesn't reset express-oss — agent finds pre-existing work from prior runs ✅ Fixed 2026-04-01
+**Problem:** T2's setup block used `if [ ! -d 'express-oss' ]; then git clone ...; fi` — on subsequent runs it skipped re-cloning, leaving any modifications from prior test runs (stats() method, test-router-stats.js) in the working tree. The agent would find the pre-existing implementation and report success without writing fresh code. This means T2 wasn't actually measuring the agent's ability to navigate and extend a codebase — it was measuring its ability to find and test pre-existing code.
+**Symptom (Run 5, 2026-04-01):** Agent found stats() at line 523 of lib/router/index.js (written by a prior run), ran the pre-existing tests, and reported success. Assessment checks all passed — but the agent didn't write a single line of new code.
+**Fix:** T2 now runs `git checkout -- . && git clean -fd` to reset express-oss to a pristine clean state before each test run. Any test files or source modifications from prior runs are wiped. The agent always starts from a clean working tree, as intended.
+**Impact:** No functional regression — assessment check logic is unchanged. The fix makes the test more rigorous (measures new-code writing, not just existing-code detection).
 
 ### ISSUE-57: T1 persistent 17/18 test failure — test ordering / shared state ✅ Fixed 2026-04-01
 **Problem:** T1 consistently produced 17/18 passing tests across multiple runs (runs 5, 6, and 7). The "Register new user" test failed because auth setup earlier in the suite already registered the same static username to the shared in-memory database. A second `POST /register` with the same username returns a conflict error (HTTP 400 or 409), failing the test. This is a classic "tests that run fine in isolation but fail when sharing state" pattern.

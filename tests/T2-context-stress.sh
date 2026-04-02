@@ -33,26 +33,50 @@ if [ "$RUNNING" != "true" ]; then
   sleep 5
 fi
 
-# Clone a medium-sized OSS project into the container workspace
-log "Setting up large codebase in container..."
+# Clean stale express-oss and onboarding-test directories from prior T2/T5 runs
+# (ISSUE-59: agent finds pre-existing stats() code in old dirs and skips writing new code)
+log "Cleaning stale workspace artifacts from prior T2 runs..."
 docker exec "$CONTAINER" sh -c "
   cd $WORKSPACE
-  # Use express repo — ~200 files, well-structured, familiar to any dev
-  if [ ! -d 'express-oss' ]; then
-    git clone --depth=1 https://github.com/expressjs/express express-oss 2>&1 | tail -5
-  else
-    echo 'express-oss already cloned'
-  fi
-  echo 'Files in express-oss:'
-  find express-oss -type f -name '*.js' | wc -l
+  REMOVED=0
+  for d in express-oss express-oss-* onboarding-test; do
+    if [ -d \"\$d\" ]; then
+      rm -rf \"\$d\"
+      echo \"  removed \$d\"
+      REMOVED=\$((REMOVED + 1))
+    fi
+  done
+  echo \"Cleaned \$REMOVED stale directories\"
 "
 
-FILE_COUNT=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE/express-oss -type f -name '*.js' 2>/dev/null | wc -l" | tr -d ' ')
-log "Codebase has $FILE_COUNT JS files"
+# Clone a medium-sized OSS project on the HOST (egress proxy blocks GitHub inside container)
+# then copy it into the container workspace
+log "Setting up large codebase..."
+EXPRESS_DIR="express-oss-${TIMESTAMP//[-:]/-}"
+CLONE_TMP="/tmp/t2-${EXPRESS_DIR}"
+
+# Clone on host (has unrestricted internet)
+if [ -d "$CLONE_TMP" ]; then rm -rf "$CLONE_TMP"; fi
+log "Cloning express on host into $CLONE_TMP..."
+git clone --depth=1 https://github.com/expressjs/express "$CLONE_TMP" 2>&1 | tail -5
+
+# Copy into container workspace
+log "Copying into container as $EXPRESS_DIR..."
+docker cp "$CLONE_TMP" "${CONTAINER}:${WORKSPACE}/${EXPRESS_DIR}"
+docker exec -u root "$CONTAINER" sh -c "chown -R node:node $WORKSPACE/$EXPRESS_DIR"
+rm -rf "$CLONE_TMP"
+
+docker exec "$CONTAINER" sh -c "
+  echo 'Files in $EXPRESS_DIR:'
+  find $WORKSPACE/$EXPRESS_DIR -type f -name '*.js' | grep -v node_modules | wc -l
+"
+
+FILE_COUNT=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE/$EXPRESS_DIR -type f -name '*.js' 2>/dev/null | grep -v node_modules | wc -l" | tr -d ' ')
+log "Codebase has $FILE_COUNT JS files (source only, excluding node_modules)"
 
 # ── Send task ───────────────────────────────────────────────────────
 
-TASK_MSG="I've cloned the Express.js framework source code into ~/express-oss in your workspace. WITHOUT reading every file, figure out: (1) Where are the core routing files in the Express source (hint: look in lib/, not node_modules/)? (2) What does Express's own Router class look like? (3) Add a \`router.stats()\` method to Express's own Router class (in lib/router/, NOT in node_modules/router/ which is a vendored dependency). The method should return an object with the count of registered routes. Write a test for it in a new file called test-router-stats.js, and run that test. Only read files you need — be selective."
+TASK_MSG="I've cloned the Express.js framework source code into ~/$EXPRESS_DIR in your workspace. Work ONLY inside the ~/$EXPRESS_DIR directory — do not use or reference any other express/onboarding directories in the workspace. WITHOUT reading every file, figure out: (1) Where are the core routing files in the Express source (hint: look in lib/, not node_modules/)? (2) What does Express's own Router class look like? (3) Add a NEW \`router.stats()\` method to Express's own Router class (in lib/router/, NOT in node_modules/router/ which is a vendored dependency). The method should return an object with the count of registered routes and middleware. Write a test for it in a new file called test-router-stats.js inside the ~/$EXPRESS_DIR directory, and run that test. Only read files you need — be selective."
 
 log "Sending context-stress task..."
 START_TIME=$(date +%s)
@@ -86,18 +110,18 @@ log "Checking what was produced..."
 # Did agent create the test file?
 TEST_FILE_EXISTS=$(docker exec "$CONTAINER" sh -c "test -f $WORKSPACE/test-router-stats.js && echo yes || echo no" 2>/dev/null || echo "no")
 
-# Did it create the file in the express-oss dir instead?
-TEST_FILE_ALT=$(docker exec "$CONTAINER" sh -c "test -f $WORKSPACE/express-oss/test-router-stats.js && echo yes || echo no" 2>/dev/null || echo "no")
+# Did it create the file in the express dir?
+TEST_FILE_ALT=$(docker exec "$CONTAINER" sh -c "test -f $WORKSPACE/$EXPRESS_DIR/test-router-stats.js && echo yes || echo no" 2>/dev/null || echo "no")
 
 # Find test file anywhere in workspace
 TEST_FILE_LOCATION=$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -name 'test-router-stats.js' 2>/dev/null | head -3" 2>/dev/null || echo "")
 
 # KEY CHECK: Was stats() added to the CORRECT file (Express lib/router) or vendored dep (node_modules/router)?
-STATS_IN_LIB=$(docker exec "$CONTAINER" sh -c "grep -l 'stats' $WORKSPACE/express-oss/lib/router/*.js 2>/dev/null || echo ''" 2>/dev/null | tr '\n' ' ')
-STATS_IN_NODE_MODULES=$(docker exec "$CONTAINER" sh -c "grep -l 'stats' $WORKSPACE/express-oss/node_modules/router/*.js 2>/dev/null || echo ''" 2>/dev/null | tr '\n' ' ')
+STATS_IN_LIB=$(docker exec "$CONTAINER" sh -c "grep -l 'stats' $WORKSPACE/$EXPRESS_DIR/lib/router/*.js 2>/dev/null || echo ''" 2>/dev/null | tr '\n' ' ')
+STATS_IN_NODE_MODULES=$(docker exec "$CONTAINER" sh -c "grep -l 'stats' $WORKSPACE/$EXPRESS_DIR/node_modules/router/*.js 2>/dev/null || echo ''" 2>/dev/null | tr '\n' ' ')
 # Also check for .stats method (more precise)
-STATS_METHOD_IN_LIB=$(docker exec "$CONTAINER" sh -c "grep -rc '\.stats\s*=\|prototype\.stats' $WORKSPACE/express-oss/lib/ 2>/dev/null | grep -v ':0' | head -5 || echo ''" 2>/dev/null)
-STATS_METHOD_IN_MODULES=$(docker exec "$CONTAINER" sh -c "grep -rc '\.stats\s*=\|prototype\.stats' $WORKSPACE/express-oss/node_modules/ 2>/dev/null | grep -v ':0' | head -5 || echo ''" 2>/dev/null)
+STATS_METHOD_IN_LIB=$(docker exec "$CONTAINER" sh -c "grep -rc '\.stats\s*=\|prototype\.stats' $WORKSPACE/$EXPRESS_DIR/lib/ 2>/dev/null | grep -v ':0' | head -5 || echo ''" 2>/dev/null)
+STATS_METHOD_IN_MODULES=$(docker exec "$CONTAINER" sh -c "grep -rc '\.stats\s*=\|prototype\.stats' $WORKSPACE/$EXPRESS_DIR/node_modules/ 2>/dev/null | grep -v ':0' | head -5 || echo ''" 2>/dev/null)
 
 # Did it run the test? (look for test pass/fail in agent output)
 AGENT_OUTPUT=$(cat /tmp/t2-output.txt 2>/dev/null | tail -60)
@@ -130,7 +154,7 @@ Agent was given the Express.js source (~$FILE_COUNT JS files) and asked to:
 | Duration | ${ELAPSED}s |
 | Timed out | $TIMED_OUT |
 | test-router-stats.js created (workspace root) | $TEST_FILE_EXISTS |
-| test-router-stats.js created (express-oss/) | $TEST_FILE_ALT |
+| test-router-stats.js created ($EXPRESS_DIR/) | $TEST_FILE_ALT |
 | test-router-stats.js path(s) | $TEST_FILE_LOCATION |
 | stats() added to lib/router/ (CORRECT) | ${STATS_IN_LIB:-none} |
 | stats() added to node_modules/router/ (WRONG) | ${STATS_IN_NODE_MODULES:-none} |
@@ -153,7 +177,7 @@ $AGENT_OUTPUT
 
 ## Files created by agent
 \`\`\`
-$(docker exec "$CONTAINER" sh -c "find $WORKSPACE -newer $WORKSPACE/express-oss -type f 2>/dev/null | grep -v '.git' | head -20" 2>/dev/null || echo "(could not list)")
+$(docker exec "$CONTAINER" sh -c "find $WORKSPACE/$EXPRESS_DIR -newer $WORKSPACE/$EXPRESS_DIR/package.json -type f 2>/dev/null | grep -v '.git' | grep -v node_modules | head -20" 2>/dev/null || echo "(could not list)")
 \`\`\`
 RESULT_EOF
 
