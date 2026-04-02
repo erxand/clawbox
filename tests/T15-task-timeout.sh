@@ -60,7 +60,7 @@ sleep 15
 log "Test 1: --timeout flag is accepted + log path printed..."
 
 # Give a complex task that should NOT finish in 1 minute
-TASK_DESC="Build a complete REST API for a blog platform in /home/node/.openclaw/workspace/blog-api-timeout-test with: (1) Express.js server with JWT authentication middleware, (2) endpoints for users (register, login, profile), posts (CRUD), comments (CRUD on posts), (3) in-memory data store with proper validation, (4) comprehensive test suite with at least 20 tests using Jest, (5) API documentation in README.md. Make sure all tests pass. Create TASK.md with your plan and progress."
+TASK_DESC="IMPORTANT: Do ALL of this work yourself — do NOT spawn subagents or delegate to other sessions. Write every file directly using your own tools. Build a complete REST API for a blog platform in /home/node/.openclaw/workspace/blog-api-timeout-test with: (1) Express.js server with JWT authentication middleware, (2) endpoints for users (register, login, profile), posts (CRUD), comments (CRUD on posts), (3) in-memory data store with proper validation, (4) comprehensive test suite with at least 20 tests using Jest, (5) API documentation in README.md. Make sure all tests pass. Create TASK.md with your plan and progress."
 
 # Capture the task start output (ISSUE-43: extract specific log path from output)
 TASK_START_OUTPUT=$("$CLAWBOX" task --timeout 1 --session "t15-timeout-test" "$TASK_DESC" 2>&1 || true)

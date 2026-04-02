@@ -756,6 +756,13 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 - **Key finding:** `docker cp` to non-volume paths (e.g. `/tmp`) fails entirely on read-only rootfs containers. All cp operations must target volume-mounted paths (e.g. `/home/node/.openclaw/workspace`). This is by design — the test validates cp against the workspace volume.
 - **Verdict:** All CLI utility commands working correctly. ISSUE-62 fixed. ✅
 
+### ISSUE-63: Agent spawns subagent to defeat task timeout ✅ Fixed 2026-04-02
+**Problem:** When given a complex task with `--timeout 1`, the container agent's default behavior for large tasks is to spawn a subagent and return immediately. The parent agent "completes" in <1 minute (before the timeout fires), so the timeout + handoff mechanism is never triggered. The subagent runs independently with no timeout enforcement.
+**Symptom (T15 Run 5, 2026-04-02):** Agent received blog-API task, said "I'll spawn a subagent to build it out fully," and returned in 37 seconds. Task log shows `=== Task completed ===` with no timeout marker. Score: 10/13 (3 warns from timeout never firing).
+**Fix:** T15 task message now includes "IMPORTANT: Do ALL of this work yourself — do NOT spawn subagents or delegate to other sessions. Write every file directly using your own tools." This ensures the agent works inline, allowing the timeout to function as intended.
+**Note:** This is a test-level fix, not a systemic fix. The underlying architectural issue (timeouts only track the parent agent, not spawned subagents) remains — but for the purpose of T15 testing, explicit instructions are sufficient. A systemic fix would require the timeout mechanism to track subagent lifecycles, which is a gateway-level feature.
+**Result:** Run 6 (2026-04-02) confirmed timeout fired correctly with the updated message. ✅
+
 ### ISSUE-62: `clawbox cp` chown fails on read-only rootfs — needs `-u root` ✅ Fixed 2026-04-02
 **Problem:** `clawbox cp` runs `docker exec "$CONTAINER" chown -R node:node "$dest"` after `docker cp`. On read-only rootfs containers, the default user is `node` (UID 1000), which lacks permission to change file ownership. The chown fails with "Operation not permitted", leaving copied files owned by UID 501 (macOS host user) and unreadable by the container agent.
 **Second issue:** `docker cp` to paths outside of volume mounts (e.g. `/tmp`) fails with "container rootfs is marked read-only" — even though `/tmp` is a tmpfs mount, `docker cp` writes through the rootfs layer.
@@ -879,7 +886,29 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 **Problem:** `~/.clawbox-task.log` was a single fixed path — every `clawbox task` call overwrote it. This destroyed history of previous tasks and caused T15 to read test 9's log (a trivial follow-up task) instead of the timeout test's log, making the result section useless.
 **Fix:** `cmd_task` now generates a timestamped log file (`~/.clawbox-task-YYYYMMDD-HHMMSS.log`) and updates a symlink `~/.clawbox-task.log` → latest. `task-logs`, `task-status`, and `cancel` all resolve the symlink. The actual timestamped path is printed in `clawbox task` output ("Log: /path/...") so tests and users can pin the exact file. T15 now captures this path and uses it throughout, so test 9 starting a new task no longer clobbers the analysis.
 
-### T15 — Task timeout + handoff (2026-03-29, re-run 2026-03-31)
+### T15 — Task timeout + handoff (2026-03-29, re-run 2026-03-31, re-run 2026-04-02)
+
+**Run 6 (2026-04-02 16:48) — ISSUE-63 fix validated, rate-limited on handoff:**
+- ✓ ISSUE-63 fix confirmed: agent worked directly (no subagent spawn) with "do NOT spawn subagents" instruction
+- ✓ Timeout triggered after exactly 1 minute ✓
+- ✓ Handoff complete marker found ✓
+- ✗ Handoff fell back to embedded agent due to `gateway closed (1012): service restart` after SIGUSR1
+- ✗ Embedded agent rate-limited: both claude-sonnet-4-6 and claude-opus-4-6 in cooldown
+- ✗ TASK.md not found in container (handoff couldn't execute)
+- ✓ Lock cleaned up, new task starts after restart
+- ✓ Timeout, log path, help text all working correctly
+- **Score: 11/13 pass, 1 warn, 1 fail** — fail was rate limit, not code regression
+- **Verdict:** Timeout mechanism works. Handoff gateway restart timing is environment-dependent. Rate limit was the actual blocker. ⚠️
+
+**Run 5 (2026-04-02 16:46) — ISSUE-63 found (subagent bypass):**
+- ✓ Task started, --timeout 1 accepted
+- ✗ Agent spawned a subagent to build the entire project and returned in ~37s — defeating the 1-minute timeout entirely
+- ✗ No timeout triggered (task "completed" before timeout fired)
+- ✗ No handoff (not needed — task was already "done")
+- **Score: 10/13 pass, 3 warn, 0 fail** — all 3 warns from timeout never firing
+- **Root cause (ISSUE-63):** The agent's default behavior for large tasks is to spawn subagents. Since the parent agent returns immediately after spawning, the task appears "completed" in <1 minute. The timeout mechanism only tracks the parent agent's lifecycle, not spawned subagents.
+- **Fix applied (2026-04-02):** T15 task message now includes "IMPORTANT: Do ALL of this work yourself — do NOT spawn subagents or delegate to other sessions." This ensures the agent works directly, giving the timeout mechanism time to fire.
+- **Verdict:** ISSUE-63 identified and fixed. Fix validated in Run 6 (timeout fired correctly). ✅
 
 **Run 4 (2026-03-31 04:40) — ISSUE-51 + ISSUE-52 fixes validated:**
 - ✓ **13/13 pass, 0 warn, 0 fail** — fully clean
