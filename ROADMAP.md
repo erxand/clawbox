@@ -741,6 +741,27 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 - ✓ Edge cases: no-args usage hint, bad-path error message
 - **Verdict:** Backup/restore fully functional after fix. ISSUE-61 confirmed fixed. ✅
 
+### T18 — CLI Utility Commands (2026-04-02) ✅
+
+**Run 1 (2026-04-02 14:52) — first run, found ISSUE-62:**
+- ✓ **38/38 pass, 0 warn, 0 fail** — perfect score
+- ✓ Phase 1 (clawbox cp): single file copy, directory copy, content verification, ownership check (node:node), error paths (no args, one arg)
+- ✓ Phase 2 (clawbox shell): listed in help, container runs as 'node' user
+- ✓ Phase 3 (clawbox logs-tail): returns 50 lines of log content
+- ✓ Phase 4 (clawbox ask): alias works, no-args shows usage hint
+- ✓ Phase 5 (help completeness): all 19 commands present in help output
+- ✓ Phase 6 (status output): running state, ws:// URL, port number all visible
+- ✓ Phase 7 (edge cases): file with spaces, 1MB large file (exact size match), unknown command → help
+- **ISSUE-62 found and fixed during development:** `clawbox cp` chown step used `docker exec` without `-u root`, which fails on read-only rootfs containers because the `node` user can't change file ownership. Fixed to `docker exec -u root`.
+- **Key finding:** `docker cp` to non-volume paths (e.g. `/tmp`) fails entirely on read-only rootfs containers. All cp operations must target volume-mounted paths (e.g. `/home/node/.openclaw/workspace`). This is by design — the test validates cp against the workspace volume.
+- **Verdict:** All CLI utility commands working correctly. ISSUE-62 fixed. ✅
+
+### ISSUE-62: `clawbox cp` chown fails on read-only rootfs — needs `-u root` ✅ Fixed 2026-04-02
+**Problem:** `clawbox cp` runs `docker exec "$CONTAINER" chown -R node:node "$dest"` after `docker cp`. On read-only rootfs containers, the default user is `node` (UID 1000), which lacks permission to change file ownership. The chown fails with "Operation not permitted", leaving copied files owned by UID 501 (macOS host user) and unreadable by the container agent.
+**Second issue:** `docker cp` to paths outside of volume mounts (e.g. `/tmp`) fails with "container rootfs is marked read-only" — even though `/tmp` is a tmpfs mount, `docker cp` writes through the rootfs layer.
+**Fix:** Changed `docker exec "$CONTAINER" chown -R node:node "$dest"` to `docker exec -u root "$CONTAINER" chown -R node:node "$dest"`. The `-u root` flag runs the chown as root inside the container, which has the necessary permissions even with read-only rootfs.
+**Impact:** All `clawbox cp` operations on containers with `read_only: true` (which is the default since T13) were silently failing on the ownership step. Files would be copied but unreadable by the agent.
+
 ### ISSUE-61: Makefile restore breaks on absolute paths + wrong file ownership ✅ Fixed 2026-04-02
 **Problem:** Two bugs in the `restore` Makefile target:
 1. **Path handling:** `docker run -v $(pwd)/$(FILE):/backup.tar.gz:ro` always prepends `$(pwd)/` — when FILE is an absolute path (e.g. from `clawbox restore /full/path/backup.tar.gz`), Docker gets a double-rooted path like `/Users/foo//Users/foo/backups/backup.tar.gz`. Docker silently creates an empty bind-mount, and `tar xzf` fails with "invalid magic" (empty file).
