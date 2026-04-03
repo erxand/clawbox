@@ -2,6 +2,33 @@
 
 ## Test Results
 
+### T22 — --retry flag + rate-limit detection (2026-04-03)
+
+**Run 1 (2026-04-03 14:52) — new test, first run:**
+- ✓ **17/17 pass, 0 warn, 0 fail** — perfect score on first run
+- ✓ Phase 1: `--retry 1` accepted; successful run returns expected response
+- ✓ Phase 2: `--retry 0` accepted (no-op on success)
+- ✓ Phase 3: `--retry` works in any flag position (before or after message arg)
+- ✓ Phase 4: `--retry` with no value gives usage hint
+- ✓ Phase 5: `--retry` documented in help; help mentions rate-limit context; exit code 2 documented
+- ✓ Phase 6: `clawbox task --retry 1` accepted for background tasks
+- ✓ Phase 7: All rate-limit detection patterns verified (`API rate limit reached`, `rate_limit_error`, `overloaded_error`, `CLAWBOX_RATE_LIMITED`); no false-positive on normal responses
+- ✓ Phase 8: Source code has `exit 2`, `CLAWBOX_RATE_LIMITED` sentinel, `retry_max` variable, and retry loop structure
+- **Verdict:** --retry flag and rate-limit detection are working correctly across all tested scenarios. ✅
+
+### T13 — Read-only rootfs validation (2026-04-03)
+
+**Re-run (2026-04-03 14:48) — stability check:**
+- ✓ **15/15 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ ReadonlyRootfs=true confirmed by Docker inspect
+- ✓ Root filesystem rejects writes at overlay2 level
+- ✓ All system paths read-only: /usr /bin /lib /etc /sbin /home/node/.npm-global
+- ✓ /tmp (tmpfs) writable, /run (tmpfs) writable
+- ✓ /home/node/.openclaw (persistent volume) writable
+- ✓ GIT_CONFIG_GLOBAL and NPM_CONFIG_CACHE correctly redirected to volume
+- ✓ Agent responds, writes to workspace, npm install in workspace, git init+commit all work
+- **Verdict:** T13 fully stable. Read-only rootfs security hardening continues to hold. ✅
+
 ### T21 — JSON output completeness + CLAWBOX_DIR env override (2026-04-03)
 
 **Run 1 (2026-04-03 12:56) — new test, first run:**
