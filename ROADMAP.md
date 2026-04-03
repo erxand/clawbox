@@ -2,6 +2,29 @@
 
 ## Test Results
 
+### T11 — Background task mode (2026-04-03)
+
+**Run (2026-04-03 04:48) — stability check:**
+- ✓ **12/12 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ Non-blocking start, timestamped log, symlink, task completion (~10s), lock cleanup, concurrent warning: all green
+- ✓ ISSUE-43 symlink behavior: `~/.clawbox-task.log` → timestamped log confirmed
+- **Verdict:** T11 fully stable. ✅
+
+### T15 — Task timeout + handoff (2026-04-03)
+
+**Run 7 (2026-04-03 04:48) — 13/13 fully clean (first rate-limit-free T15 run since ISSUE-63 fix):**
+- ✓ **13/13 pass, 0 warn, 0 fail** — fully clean
+- ✓ ISSUE-63 fix confirmed: no subagent spawn, agent worked directly
+- ✓ Timeout triggered after exactly 1 minute ✓
+- ✓ No gateway connection failures (ISSUE-51 poll loop holding)
+- ✓ Handoff complete marker found; handoff response: 996 bytes
+- ✓ TASK.md found in container workspace
+- ✓ Lock cleaned up, new task starts cleanly after timeout (ISSUE-52 fix holding)
+- ✓ `--timeout` in help, timestamped log + symlink correct
+- **Verdict:** T15 fully reliable. Timeout + handoff is production-ready and now confirmed clean with no rate-limit interference. ✅
+
+---
+
 ### T1 — Long-running task (2026-04-03, Run 9)
 
 **Run 9 (2026-04-03 02:52) — ISSUE-67 fix validated (Jest test detection):**
