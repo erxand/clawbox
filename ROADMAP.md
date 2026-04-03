@@ -2,6 +2,37 @@
 
 ## Test Results
 
+### T-egress — Egress isolation (2026-04-03)
+
+**Run 3 (2026-04-03 16:49) — stability check:**
+- ✓ **11 pass, 1 warn, 0 fail** — same clean pattern as prior runs
+- ⚠ Pre-proxy: example.com NOT reachable (transient; icanhazip/google confirmed vulnerability)
+- ✓ Phase 2: all 7 lockdown checks green — arbitrary blocked, Anthropic + npm allowed
+- **Verdict:** Egress isolation fully stable. ✅
+
+### T7 — UX / Friction audit (2026-04-03)
+
+**Re-run (2026-04-03 16:55) — added `clawbox version` command, 45/45:**
+- ✓ **45/45 pass, 0 warn, 0 fail** — up from 44 after new version command
+- ✓ New: `clawbox version` / `--version` / `-V` now shows git ref, date, openclaw version, and CLAWBOX_DIR
+- ✓ T7 version check fixed: was a false positive (exit 1 "Unknown command" still passed old grep); now uses exit code + content check
+- ✓ T7 now checks all 23 commands in help (was 22; added `version`)
+- **What changed:** Added `cmd_version()` function, dispatch entries for `version|--version|-V`, and help text entry. Fixed T7's version check to use exit code instead of naive `grep -qvi "unknown command"` (which matched other output lines).
+- **Verdict:** UX remains fully clean. `clawbox version` closes the last QoL gap in T7. ✅
+
+**Re-run (2026-04-03 16:50) — stability check pre-version-command:**
+- ✓ **44/44 pass, 0 warn, 0 fail** — perfect score maintained before new command added
+- **Verdict:** Confirmed stable baseline. ✅
+
+### T6 — Concurrent task handling (2026-04-03)
+
+**Re-run (2026-04-03 16:51) — stability check:**
+- ✓ **20/20 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ Part 1: Both tasks complete (A: 33s, B: 103s wall time), math + strings tests all pass
+- ✓ Part 2: Lock behavior fully intact — exits 1 with actionable UX, stale lock auto-cleaned
+- ✓ Zero cross-contamination in either direction
+- **Verdict:** T6 continues to be fully stable. ✅
+
 ### T22 — --retry flag + rate-limit detection (2026-04-03)
 
 **Run 1 (2026-04-03 14:52) — new test, first run:**
@@ -999,6 +1030,11 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 - **ISSUE-62 found and fixed during development:** `clawbox cp` chown step used `docker exec` without `-u root`, which fails on read-only rootfs containers because the `node` user can't change file ownership. Fixed to `docker exec -u root`.
 - **Key finding:** `docker cp` to non-volume paths (e.g. `/tmp`) fails entirely on read-only rootfs containers. All cp operations must target volume-mounted paths (e.g. `/home/node/.openclaw/workspace`). This is by design — the test validates cp against the workspace volume.
 - **Verdict:** All CLI utility commands working correctly. ISSUE-62 fixed. ✅
+
+### QoL: `clawbox version` command added ✅ 2026-04-03
+**Problem:** There was no way to tell what version of clawbox you were running. `clawbox --version` returned "Unknown command: --version". Users updating clawbox via git had no way to verify the current ref. T7's version check was also a false-positive — `grep -qvi "unknown command"` matched the trailing "Run: clawbox help" line even when version returned exit 1.
+**Fix:** Added `cmd_version()` function: shows `git describe --tags --always` (or git SHA), the most recent commit date, the openclaw CLI version, and CLAWBOX_DIR. Added dispatch entries for `version`, `--version`, and `-V`. Added `version` to help text. Fixed T7's version check to use exit code + content verification instead of the naive inverse-grep.
+**Result:** `clawbox version` now outputs e.g. `clawbox v1.0.0 (2026-04-03)` (or SHA if no tags). T7 now has 45 checks (up from 44). T7 re-run confirmed 45/45. ✅
 
 ### ISSUE-68: T15 workspace contamination causes false-positive timeout test results ✅ Fixed 2026-04-03
 **Problem:** T15 stops and restarts the container (`clawbox stop; clawbox start`) but the workspace is a Docker volume that persists across restarts. Prior T1 and T15 runs leave behind `taskman-*`, `blog-api-timeout-test`, and other completed project directories. When T15's agent starts, it finds 5-6 fully-complete pre-existing projects, reports "all work done", and exits in <1 minute — the 1-minute timeout never fires. T15 reports 13/13 passing even though the agent did NO new work and the timeout mechanism was never actually tested.

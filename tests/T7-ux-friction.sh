@@ -54,7 +54,7 @@ else
 fi
 
 # Are all common commands listed?
-for cmd in start stop restart status logs chat run ask task task-status task-logs cancel doctor shell cp logs-tail backup restore upgrade clean install; do
+for cmd in start stop restart status logs chat run ask task task-status task-logs cancel doctor shell cp logs-tail backup restore upgrade clean install version; do
   if echo "$HELP_OUTPUT" | grep -q "^  $cmd"; then
     check "help lists '$cmd'" "pass" ""
   else
@@ -253,10 +253,11 @@ fi
 
 # Is there a 'version' or similar info command?
 VERSION_OUT=$("$CLAWBOX" version 2>&1 || true)
-if echo "$VERSION_OUT" | grep -qvi "unknown command"; then
-  check "version command exists" "pass" ""
+VERSION_EXIT=$("$CLAWBOX" version >/dev/null 2>&1 && echo "0" || echo "1")
+if [ "$VERSION_EXIT" = "0" ] && echo "$VERSION_OUT" | grep -qiE "(clawbox|openclaw|[0-9]{4}-[0-9]{2}-)"; then
+  check "version command exists and outputs version info" "pass" ""
 else
-  check "version command exists" "warn" "No 'clawbox version' — users can't tell what they're running"
+  check "version command exists and outputs version info" "warn" "No 'clawbox version' or it returns an error — users can't tell what they're running"
 fi
 
 # Does the CLI have a short alias for run (like 'ask')?

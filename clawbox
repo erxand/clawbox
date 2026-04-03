@@ -876,6 +876,20 @@ cmd_install() {
   echo "✓ Installed. Run: clawbox help"
 }
 
+cmd_version() {
+  # Show clawbox version from git, plus openclaw CLI version
+  local git_version=""
+  git_version=$(git -C "$CLAWBOX_DIR" describe --tags --always 2>/dev/null || echo "dev")
+  local git_date=""
+  git_date=$(git -C "$CLAWBOX_DIR" log -1 --format='%ci' 2>/dev/null | cut -d' ' -f1 || echo "unknown date")
+  local oc_version=""
+  oc_version=$(openclaw --version 2>/dev/null | head -1 || echo "not installed")
+
+  echo "clawbox ${git_version} (${git_date})"
+  echo "openclaw: ${oc_version}"
+  echo "CLAWBOX_DIR: ${CLAWBOX_DIR}"
+}
+
 cmd_doctor() {
   # Comprehensive self-diagnostic — checks prerequisites, container health,
   # gateway reachability, disk/memory, and common config issues.
@@ -1217,6 +1231,7 @@ Commands:
   clean              Stop container and delete all data
   install            Install clawbox CLI to /usr/local/bin
   doctor             Run self-diagnostic: checks prereqs, container health, gateway, disk
+  version            Show clawbox version (git ref + date) and openclaw CLI version
   help               Show this help
 
 Environment:
@@ -1255,6 +1270,7 @@ case "$COMMAND" in
   clean)       cmd_clean "$@" ;;
   install)     cmd_install "$@" ;;
   doctor)      cmd_doctor "$@" ;;
+  version|--version|-V) cmd_version ;;
   help|--help|-h) cmd_help ;;
   *)
     echo "Unknown command: $COMMAND"
