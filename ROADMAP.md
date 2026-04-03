@@ -498,7 +498,18 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - **Findings:** (1) Agent is an optimist: self-reports success before fully verifying; (2) Shared server state between test suites is a common gotcha — agent's workaround was reasonable but execution was fragile; (3) The T5 test script correctly caught the discrepancy (test pass/fail blocks).
 - **Verdict:** T5 scaffold fix confirmed working. ISSUE-44 rate-limit detection fix also confirmed (run was not rate-limited this time). Agent produced high-quality middleware code but left a 1-test regression. Score: 4/4 assessment checks pass, but 13/14 actual tests. Solid performance; the failure mode is instructive. ✅
 
-### T14 — Multi-error recovery (2026-03-28, re-run 2026-03-30, re-run 2026-03-31) ✅
+### T14 — Multi-error recovery (2026-03-28, re-run 2026-03-30, re-run 2026-03-31, re-run 2026-04-02) ✅
+
+**Re-run (2026-04-02 20:47) — stability check + test script fixes:**
+- ✓ **4/6 pass (actually 6/6 effective), 0 fail, 2 warn** — same pattern as prior
+- ✓ Syntax error (missing `});`) fixed correctly in 49s
+- ✓ Wrong import path (`./helpers` → `./utils`) fixed correctly
+- ✓ Missing function (`subtract()` added to utils.js) — correct implementer behavior
+- ✓ All 3 tests passing, server starts cleanly
+- ⚠ `helpers` grep false-positive: agent's comment `// ERROR 2a: wrong import path (./helpers ...)` still contained "helpers" as text. **Fixed:** grep now strips comments before matching.
+- ⚠ "Short output" threshold was 20 lines — too aggressive for efficient agents. 12 lines with 3 clear fix descriptions is substantive. **Fixed:** lowered threshold to 8 lines.
+- **Test script improvements applied:** (1) `helpers` grep now excludes comment lines (`grep -v '^\s*//'`); (2) "gave up" line-count threshold lowered from 20 to 8.
+- **Verdict:** T14 stable. Agent error recovery consistent. Test script false-positives fixed. ✅
 
 **Re-run (2026-03-31 22:47) — stability check post all ISSUE-49/50/53/54/55/56 fixes:**
 - ✓ **5/6 pass, 0 fail, 1 warn** — consistent pattern
@@ -637,8 +648,15 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - ⚠ Session isolation: shared agent memory by design (known behavior, documented)
 - **Verdict:** Session naming fully stable. ✅
 
-### T6 — Concurrent task handling ✅ 2026-03-26, re-run 2026-03-29, re-run 2026-03-31
+### T6 — Concurrent task handling ✅ 2026-03-26, re-run 2026-03-29, re-run 2026-03-31, re-run 2026-04-02
 Run two separate `clawbox run` commands simultaneously pointing at different workspaces. Do they interfere? Are sessions properly isolated?
+
+**Re-run (2026-04-02 20:45) — stability check:**
+- ✓ **20/20 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ Part 1: Both tasks complete (A: 33s, B: 84s total wall time), math + strings tests all pass
+- ✓ Part 2: Lock behavior fully intact — exits 1 with actionable UX, stale lock auto-cleaned
+- ✓ Zero cross-contamination in either direction
+- **Verdict:** T6 continues to be fully stable. ✅
 
 **Results (2026-03-26):**
 - ✓ Both tasks completed — no timeouts (A: 63s, B: 114s total wall time)

@@ -193,7 +193,7 @@ fi
 
 # Check 2: test.js import path fixed (no ./helpers reference)
 # Note: if all tests pass (check 3) the import is definitely fixed — this is a secondary signal
-IMPORT_CHECK=$(docker exec "$CONTAINER" sh -c "grep -c 'helpers' /home/node/.openclaw/workspace/multi-error-app/test.js 2>/dev/null || echo 0" 2>/dev/null | tr -d ' \n')
+IMPORT_CHECK=$(docker exec "$CONTAINER" sh -c "grep -v '^\s*//' /home/node/.openclaw/workspace/multi-error-app/test.js | grep -c 'helpers' 2>/dev/null || echo 0" 2>/dev/null | tr -d ' \n')
 if [ "$IMPORT_CHECK" = "0" ]; then
   pass "Wrong import path fixed — no 'helpers' reference remains in test.js (Error 2a fixed)"
 else
@@ -243,7 +243,7 @@ fi
 
 # Check 6: Agent didn't give up early
 AGENT_LINES=$(echo "$AGENT_OUTPUT" | wc -l | tr -d ' ')
-if [ "$AGENT_LINES" -gt 20 ]; then
+if [ "$AGENT_LINES" -gt 8 ]; then
   pass "Agent produced substantive output ($AGENT_LINES lines — didn't give up early)"
 else
   warn "Agent output seems short ($AGENT_LINES lines) — may have given up"
@@ -290,7 +290,7 @@ $TEST_ERROR
 | All tests pass | $([ "$TEST_EXIT" = "0" ] && echo "✓ yes" || echo "✗ no ($TESTS_FAILED)") |
 | Server starts clean | $(echo "$SERVER_RESULT" | grep -qiE "SyntaxError|Error:|Cannot find" && echo "✗ no" || echo "✓ yes") |
 | Agent worked systematically | $([ "$AGENT_FIXED_MULTIPLE" -gt 3 ] && echo "✓ yes ($AGENT_FIXED_MULTIPLE relevant mentions)" || echo "⚠ unclear ($AGENT_FIXED_MULTIPLE mentions)") |
-| Agent didn't give up | $([ "$AGENT_LINES" -gt 20 ] && echo "✓ yes ($AGENT_LINES lines output)" || echo "⚠ may have given up ($AGENT_LINES lines)") |
+| Agent didn't give up | $([ "$AGENT_LINES" -gt 8 ] && echo "✓ yes ($AGENT_LINES lines output)" || echo "⚠ may have given up ($AGENT_LINES lines)") |
 
 **Pass:** $PASS / $TOTAL | **Fail:** $FAIL | **Warn:** $WARN
 
