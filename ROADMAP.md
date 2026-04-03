@@ -2,6 +2,20 @@
 
 ## Test Results
 
+### T1 — Long-running task (2026-04-03, Run 9)
+
+**Run 9 (2026-04-03 02:52) — ISSUE-67 fix validated (Jest test detection):**
+- ✓ **TASK.md created** with all steps checked off
+- ✓ **2 git commits** (scaffold → all tests passing + frontend)
+- ✓ **30/30 tests passing** (Jest) — `Tests passing: yes` confirmed ✅
+- ✓ **Completed in 183s (~3 min)** — consistent with Run 8
+- ✓ ISSUE-67 fix confirmed: `Tests:[[:space:]]*[0-9]+ passed` pattern now matches Jest output; `TESTS_PASSING="yes"` reported correctly (was "unknown" in Run 8 because fix committed AFTER that run)
+- ✓ Extra port row now appears in result table (none needed — agent used standard ports)
+- ⚠ Server stopped after test run (expected — agent exits after completing) — port probes returned 000
+- **Verdict:** All ISSUE-64/65/66/67 fixes confirmed working. T1 is fully reliable with correct test detection. ✅
+
+---
+
 ### T9, T10 — Stability checks (2026-04-03)
 
 **T9 (2026-04-03 00:50) — output modes stability check:**
