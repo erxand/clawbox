@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page {
+    size: letter;
+    margin: 0.75in;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    line-height: 1.6;
+    font-size: 11pt;
+    margin: 0;
+    padding: 0;
+  }
+  h1 {
+    color: #64b5f6;
+    font-size: 22pt;
+    border-bottom: 2px solid #64b5f6;
+    padding-bottom: 8px;
+    margin-top: 0;
+  }
+  h2 {
+    color: #81c784;
+    font-size: 15pt;
+    margin-top: 28px;
+    border-bottom: 1px solid #333;
+    padding-bottom: 4px;
+  }
+  h3 {
+    color: #ffb74d;
+    font-size: 12pt;
+    margin-top: 20px;
+  }
+  p, li { color: #d0d0d0; }
+  strong { color: #ffffff; }
+  code {
+    background: #16213e;
+    color: #80cbc4;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 10pt;
+  }
+  pre {
+    background: #16213e;
+    color: #80cbc4;
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-size: 9.5pt;
+    overflow-x: auto;
+    border-left: 3px solid #64b5f6;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0;
+    font-size: 10pt;
+  }
+  th {
+    background: #16213e;
+    color: #64b5f6;
+    padding: 8px 12px;
+    text-align: left;
+    border: 1px solid #333;
+  }
+  td {
+    padding: 6px 12px;
+    border: 1px solid #333;
+    color: #d0d0d0;
+  }
+  tr:nth-child(even) td { background: #1a1a2e; }
+  tr:nth-child(odd) td { background: #16213e; }
+  .pass { color: #81c784; font-weight: bold; }
+  .fail { color: #e57373; font-weight: bold; }
+  .warn { color: #ffb74d; font-weight: bold; }
+  .risk-high { color: #e57373; }
+  .risk-medium { color: #ffb74d; }
+  .risk-low { color: #81c784; }
+  .cover-page {
+    text-align: center;
+    padding-top: 200px;
+    page-break-after: always;
+  }
+  .cover-page h1 {
+    font-size: 32pt;
+    border: none;
+    color: #64b5f6;
+  }
+  .cover-page .subtitle {
+    font-size: 16pt;
+    color: #aaa;
+    margin-top: 8px;
+  }
+  .cover-page .date {
+    font-size: 12pt;
+    color: #777;
+    margin-top: 40px;
+  }
+  .cover-page .confidential {
+    font-size: 10pt;
+    color: #e57373;
+    margin-top: 60px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+  .section { page-break-inside: avoid; }
+  .arch-diagram {
+    background: #16213e;
+    padding: 16px;
+    border-radius: 8px;
+    font-family: 'Courier New', monospace;
+    font-size: 9pt;
+    color: #80cbc4;
+    white-space: pre;
+    line-height: 1.4;
+    overflow-x: auto;
+  }
+  .callout {
+    background: #16213e;
+    border-left: 4px solid #64b5f6;
+    padding: 10px 16px;
+    margin: 12px 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .callout.warning {
+    border-left-color: #ffb74d;
+  }
+  .callout.danger {
+    border-left-color: #e57373;
+  }
+  ul { padding-left: 20px; }
+  li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<div class="cover-page">
+  <h1>Clawbox Security Deep Dive</h1>
+  <div class="subtitle">Containerized AI Agent Platform — Architecture & Security Analysis</div>
+  <div class="date">April 3, 2026</div>
+  <div class="confidential">Internal — Prepared for Technical Review</div>
+</div>
+
+<h1>Executive Summary</h1>
+
+<p><strong>Clawbox</strong> is a Docker-based deployment kit that runs an AI agent (<a href="https://github.com/openclaw/openclaw">OpenClaw</a>) inside an isolated container. It enables software engineers to interact with an LLM-powered coding agent via a CLI, while enforcing security boundaries that prevent the agent from accessing the broader network, host filesystem, or credentials beyond what's explicitly granted.</p>
+
+<p>This document covers the security architecture, the specific controls implemented, validated test results, and the remaining known gaps with their risk assessments.</p>
+
+<div class="callout">
+  <strong>Bottom line:</strong> Clawbox follows defense-in-depth principles — network isolation, filesystem restrictions, capability dropping, resource limits, and credential separation are layered so that no single control failure results in full compromise. The most significant remaining gap is that the exec tool's child processes don't yet inherit virtual memory limits (ISSUE-18), and the egress proxy allowlist can be bypassed if an attacker finds a way to make raw TCP connections that skip the HTTP CONNECT proxy.
+</div>
+
+<h1>What Is Clawbox?</h1>
+
+<p>Clawbox packages an OpenClaw AI agent gateway inside a Docker container. A developer on your team runs <code>bash setup.sh</code>, provides an Anthropic API key, and gets a working agent they can talk to via:</p>
+
+<pre>clawbox run "review this PR and suggest improvements"
+clawbox chat   # interactive session</pre>
+
+<p>The agent has access to a <strong>coding</strong> tool profile — it can read/write files, execute shell commands, and search the web (optionally) within its container. It <strong>cannot</strong> access the host filesystem, push to GitHub, send emails, or reach arbitrary internet hosts.</p>
+
+<h2>Architecture</h2>
+
+<div class="arch-diagram">
+┌──────────────────────────┐         ┌───────────────────────────────────────┐
+│  Host Machine             │         │  Docker: clawbox-work                 │
+│                           │         │  (read-only rootfs, non-root user)    │
+│  $ clawbox run "..."      │         │                                       │
+│       │                   │         │  socat (0.0.0.0:18789)                │
+│       ▼                   │         │    │                                  │
+│  openclaw CLI ────────────┼── ws ──►│    ▼                                  │
+│  ws://localhost:18790     │ :18790  │  openclaw gateway (127.0.0.1:18788)   │
+│                           │         │    --bind loopback --auth none        │
+│  (loopback only)          │         │                                       │
+└──────────────────────────┘         │  HTTPS_PROXY ──► clawbox-egress-proxy │
+                                      │                   (allowlist only)    │
+                                      │                   ├─ api.anthropic.com│
+                                      │                   ├─ registry.npmjs   │
+                                      │                   └─ objects.github   │
+                                      │                                       │
+                                      │  /home/node/.openclaw/ (volume)       │
+                                      │  /host-repos/ (read-only bind mount)  │
+                                      └───────────────────────────────────────┘
+</div>
+
+<h2>Network Topology</h2>
+
+<table>
+  <tr>
+    <th>Network</th>
+    <th>Type</th>
+    <th>Connected Services</th>
+    <th>Purpose</th>
+  </tr>
+  <tr>
+    <td><code>clawbox-internal</code></td>
+    <td>Docker <code>internal: true</code></td>
+    <td>clawbox-work</td>
+    <td>No external routing — containers here cannot reach the internet directly</td>
+  </tr>
+  <tr>
+    <td><code>clawbox-egress</code></td>
+    <td>Docker bridge</td>
+    <td>clawbox-work, clawbox-egress-proxy</td>
+    <td>Agent → proxy only. Proxy has internet access; agent does not.</td>
+  </tr>
+</table>
+
+<p>The agent container sits on <strong>both</strong> networks. The <code>internal</code> network has no default gateway, so the container cannot route to the internet. The <code>egress</code> network connects it only to the proxy, which enforces an allowlist before forwarding HTTPS CONNECT requests to the real internet.</p>
+
+<h1>Security Controls — Layer by Layer</h1>
+
+<h2>1. Network Isolation & Egress Proxy</h2>
+
+<h3>How it works</h3>
+<p>All outbound HTTPS from the agent is routed through a dedicated proxy container (<code>clawbox-egress-proxy</code>) via <code>HTTPS_PROXY</code> and <code>HTTP_PROXY</code> environment variables. The proxy implements an HTTP CONNECT allowlist:</p>
+
+<table>
+  <tr><th>Allowed Host</th><th>Reason</th></tr>
+  <tr><td><code>api.anthropic.com</code></td><td>LLM API calls (core functionality)</td></tr>
+  <tr><td><code>registry.npmjs.org</code></td><td>Package installation</td></tr>
+  <tr><td><code>objects.githubusercontent.com</code></td><td>GitHub raw file downloads</td></tr>
+  <tr><td><code>*.npm.org</code></td><td>npm metadata</td></tr>
+</table>
+
+<p>Everything else — <code>google.com</code>, <code>evil.com</code>, arbitrary IPs — returns <code>403 Forbidden</code> and the connection is destroyed.</p>
+
+<p>Node.js native <code>fetch()</code> (used by the Anthropic SDK) requires special handling because it uses <code>undici</code> internally, which doesn't respect <code>HTTPS_PROXY</code>. This is solved by injecting <code>proxy-bootstrap.js</code> via <code>NODE_OPTIONS=--require</code>, which calls <code>setGlobalDispatcher(new ProxyAgent(...))</code> at process startup.</p>
+
+<h3>Validated by</h3>
+<p><strong>T-egress isolation test</strong> — 11/12 pass (1 warn: transient DNS). Confirmed: <span class="pass">example.com BLOCKED</span>, <span class="pass">google.com BLOCKED</span>, <span class="pass">evil.com BLOCKED</span>, <span class="pass">api.anthropic.com ALLOWED</span>, <span class="pass">npm install ALLOWED</span>.</p>
+
+<h2>2. Read-Only Root Filesystem</h2>
+
+<h3>How it works</h3>
+<p><code>read_only: true</code> in docker-compose.yml makes the entire container rootfs read-only at the kernel level. The agent cannot modify:</p>
+<ul>
+  <li>System binaries (<code>/usr/bin</code>, <code>/sbin</code>)</li>
+  <li>Libraries (<code>/lib</code>, <code>/usr/lib</code>)</li>
+  <li>Configuration (<code>/etc</code>)</li>
+  <li>The Node.js runtime or npm global packages</li>
+</ul>
+
+<p>Writable paths are explicitly defined:</p>
+<table>
+  <tr><th>Path</th><th>Type</th><th>Size</th><th>Purpose</th></tr>
+  <tr><td><code>/tmp</code></td><td>tmpfs</td><td>256 MB</td><td>Ephemeral scratch space (cleared on restart)</td></tr>
+  <tr><td><code>/run</code></td><td>tmpfs</td><td>32 MB</td><td>Runtime state</td></tr>
+  <tr><td><code>/home/node/.openclaw</code></td><td>Docker volume</td><td>Persistent</td><td>Workspace, configs, memory, cache</td></tr>
+</table>
+
+<p>Redirections ensure that tools expecting writable paths still work:</p>
+<ul>
+  <li><code>GIT_CONFIG_GLOBAL=/home/node/.openclaw/.gitconfig</code> → git config writes to volume</li>
+  <li><code>NPM_CONFIG_CACHE=/home/node/.openclaw/.npm-cache</code> → npm cache to volume</li>
+</ul>
+
+<h3>Validated by</h3>
+<p><strong>T13 — read-only rootfs test:</strong> 12/12 pass. Confirmed write rejection at <code>/</code>, <code>/usr</code>, <code>/bin</code>, <code>/lib</code>, <code>/etc</code>, <code>/sbin</code>. Confirmed <code>/tmp</code>, <code>/run</code>, and volume are writable. Confirmed git and npm work through redirections. Agent functional test passed.</p>
+
+<h2>3. Capability Dropping & Privilege Restrictions</h2>
+
+<pre>cap_drop:
+  - ALL
+cap_add:
+  - CHOWN
+  - SETUID
+  - SETGID
+  - DAC_OVERRIDE
+security_opt:
+  - no-new-privileges:true</pre>
+
+<p><strong>ALL</strong> Linux capabilities are dropped, then only the four needed for normal container operation are re-added. <code>no-new-privileges</code> prevents any process from gaining additional privileges via setuid binaries or capability escalation. Additionally, all setuid/setgid bits are stripped from binaries in the Dockerfile build step.</p>
+
+<h2>4. Resource Limits</h2>
+
+<table>
+  <tr><th>Limit</th><th>Value</th><th>Purpose</th></tr>
+  <tr><td>Memory</td><td>10 GB</td><td>Prevent OOM on host from runaway agent</td></tr>
+  <tr><td>CPU</td><td>1.0 core</td><td>Prevent CPU monopolization</td></tr>
+  <tr><td>PIDs (cgroup)</td><td>512</td><td>Prevent fork bombs</td></tr>
+  <tr><td>nproc (ulimit)</td><td>256 soft / 512 hard</td><td>Second layer PID limit</td></tr>
+  <tr><td>nofile (ulimit)</td><td>1024 soft / 4096 hard</td><td>Prevent file descriptor exhaustion</td></tr>
+</table>
+
+<h2>5. Non-Root Execution</h2>
+
+<p>The container runs as user <code>node</code> (uid 1000). The Dockerfile switches to this user via <code>USER node</code> before the entrypoint. Combined with <code>no-new-privileges</code> and stripped setuid bits, there is no path to root inside the container.</p>
+
+<h2>6. Credential Isolation</h2>
+
+<table>
+  <tr><th>Credential</th><th>Access</th><th>Rationale</th></tr>
+  <tr><td>Anthropic API Key</td><td><span class="pass">✓ Available</span> (env var)</td><td>Core functionality — LLM calls</td></tr>
+  <tr><td>GitHub Token</td><td><span class="fail">✗ Not available</span></td><td>Prevents prompt injection → repo access. Host handles git operations.</td></tr>
+  <tr><td>Host SSH Keys</td><td><span class="fail">✗ Not available</span></td><td>No host filesystem access</td></tr>
+  <tr><td>Host .env / secrets</td><td><span class="fail">✗ Not available</span></td><td>.env file is mode 600, not mounted into container</td></tr>
+</table>
+
+<div class="callout warning">
+  <strong>Design decision — no GitHub credentials in container:</strong> The agent can read host repositories via a read-only bind mount (<code>/host-repos:ro</code>) but cannot push, create repos, or authenticate to GitHub. This is an intentional security boundary: if a malicious prompt tricks the agent into exfiltrating code, the blast radius is limited to what's already visible in the read-only mount. The agent cannot create repos, modify remote branches, or access private repos it hasn't been explicitly given.
+</div>
+
+<h2>7. Gateway Authentication</h2>
+
+<p>The OpenClaw gateway runs with <code>--auth none</code> and <code>--bind loopback</code> (port 18788 inside the container). The socat proxy bridges to port 18789. Docker maps <code>127.0.0.1:18790 → container:18789</code>.</p>
+
+<p>This means the gateway is <strong>only accessible from the host machine's loopback interface</strong>. No other device on the local network can reach it. The <code>auth=none</code> eliminates token management friction — acceptable because the port is never network-exposed.</p>
+
+<h2>8. Web Browsing Controls</h2>
+
+<p>By default, <code>web_search</code>, <code>web_fetch</code>, and <code>browser</code> tools are denied via <code>tools.deny</code>. The agent cannot browse the internet even if the proxy allowed it. Set <code>OPENCLAW_ALLOW_WEB=1</code> to re-enable (not recommended for untrusted workloads).</p>
+
+<h1>Validated Test Results</h1>
+
+<table>
+  <tr><th>Test</th><th>Coverage</th><th>Result</th><th>Last Run</th></tr>
+  <tr><td>T-egress</td><td>Network isolation, proxy allowlist, exfiltration simulation</td><td><span class="pass">11/12 pass</span></td><td>2026-04-01</td></tr>
+  <tr><td>T13</td><td>Read-only rootfs, tmpfs mounts, volume redirects</td><td><span class="pass">12/12 pass</span></td><td>2026-04-01</td></tr>
+  <tr><td>T8</td><td>Context injection, input validation</td><td><span class="pass">10/10 pass</span></td><td>2026-04-02</td></tr>
+  <tr><td>T20</td><td>Workspace persistence across restarts</td><td><span class="pass">13/13 pass</span></td><td>2026-04-03</td></tr>
+  <tr><td>T1</td><td>Long-running task stability</td><td><span class="pass">Pass (30/30 tests)</span></td><td>2026-04-03</td></tr>
+  <tr><td>T4</td><td>Error recovery</td><td><span class="pass">Pass</span></td><td>2026-04-02</td></tr>
+  <tr><td>T5</td><td>Real-world onboarding</td><td><span class="pass">Pass</span></td><td>2026-04-02</td></tr>
+  <tr><td>T6</td><td>Concurrent tasks</td><td><span class="pass">Pass</span></td><td>2026-04-02</td></tr>
+  <tr><td>T15</td><td>Task timeout + handoff</td><td><span class="pass">13/13 pass</span></td><td>2026-04-03</td></tr>
+</table>
+
+<h1>Known Gaps & Remaining Risks</h1>
+
+<table>
+  <tr>
+    <th>Gap</th>
+    <th>Risk</th>
+    <th>Impact</th>
+    <th>Mitigation Status</th>
+  </tr>
+  <tr>
+    <td><strong>ISSUE-18:</strong> exec-tool child processes don't inherit virtual memory limits</td>
+    <td class="risk-medium">Medium</td>
+    <td>A rogue script spawned by the agent could allocate excessive virtual memory. The cgroup memory limit (10 GB) still caps RSS, but VIRT can grow unbounded.</td>
+    <td>Documented. Requires gateway support for per-exec-child ulimit propagation. Cgroup memory limit provides a hard backstop.</td>
+  </tr>
+  <tr>
+    <td><strong>Raw TCP bypass:</strong> If agent code makes raw TCP connections (not HTTP CONNECT), traffic bypasses the proxy</td>
+    <td class="risk-medium">Medium</td>
+    <td>The <code>internal: true</code> Docker network blocks direct internet routing, but if the agent can resolve DNS and construct raw TCP to the proxy's egress network, it could potentially tunnel traffic.</td>
+    <td>Mitigated by Docker's internal network having no default gateway. The agent cannot route to the internet without going through the HTTP CONNECT proxy. A determined attacker could potentially use the proxy connection itself as a tunnel, but this requires significant sophistication.</td>
+  </tr>
+  <tr>
+    <td><strong>Anthropic API key exposure:</strong> Key is available as an env var inside the container</td>
+    <td class="risk-low">Low</td>
+    <td>If the agent is tricked into printing <code>$ANTHROPIC_API_KEY</code>, the key is exposed to whoever reads the output. The key cannot be exfiltrated to an external server (blocked by egress proxy).</td>
+    <td>Accepted risk. The agent needs the key to function. Env var exposure is standard for containerized apps. Key rotation is recommended.</td>
+  </tr>
+  <tr>
+    <td><strong>npm package supply chain:</strong> Agent can install arbitrary npm packages</td>
+    <td class="risk-medium">Medium</td>
+    <td>A malicious npm package could execute arbitrary code inside the container during install. Blast radius is limited by read-only rootfs, no GitHub creds, and egress proxy.</td>
+    <td>Partially mitigated. The read-only rootfs prevents persistent modification. Egress proxy prevents data exfiltration to non-allowlisted hosts. Consider adding a package allowlist or disabling npm in high-security deployments.</td>
+  </tr>
+  <tr>
+    <td><strong>Prompt injection via host-repos:</strong> Malicious code in read-only mounted repos could influence agent behavior</td>
+    <td class="risk-low">Low</td>
+    <td>If a mounted repo contains adversarial content (e.g., a README with hidden instructions), the agent might follow those instructions. However, the agent cannot push changes, access credentials, or reach external hosts.</td>
+    <td>Mitigated by defense-in-depth. Even if the agent is influenced, it lacks the capabilities to cause significant damage outside the container.</td>
+  </tr>
+  <tr>
+    <td><strong>Container escape:</strong> Kernel/Docker vulnerability</td>
+    <td class="risk-low">Low</td>
+    <td>A zero-day container escape would give the agent host-level access.</td>
+    <td>Standard industry risk. Mitigated by running as non-root, dropping all capabilities, no-new-privileges, and keeping Docker/kernel updated. Consider gVisor or Kata Containers for defense-in-depth if running untrusted workloads.</td>
+  </tr>
+</table>
+
+<h1>Recommendations</h1>
+
+<h3>For Production Deployment</h3>
+<ol>
+  <li><strong>Rotate API keys regularly</strong> — the Anthropic key is the highest-value credential in the system.</li>
+  <li><strong>Pin the OpenClaw version</strong> in the Dockerfile rather than installing <code>latest</code>.</li>
+  <li><strong>Add npm package allowlisting</strong> if the agent will run in environments with sensitive data.</li>
+  <li><strong>Consider gVisor/Kata</strong> for an additional container isolation layer if running untrusted prompts.</li>
+  <li><strong>Monitor proxy logs</strong> — the egress proxy logs every ALLOWED and BLOCKED connection.</li>
+  <li><strong>Scope host-repo mounts</strong> — only mount the specific repos the agent needs, not a parent directory.</li>
+</ol>
+
+<h3>For Evaluation</h3>
+<ol>
+  <li>Run <code>bash tests/T-egress-isolation.sh</code> to validate network isolation on your own infrastructure.</li>
+  <li>Run <code>bash tests/T13-readonly-rootfs.sh</code> to validate filesystem restrictions.</li>
+  <li>Review <code>proxy/proxy.js</code> (48 lines) — the entire egress allowlist is trivially auditable.</li>
+  <li>Review <code>docker-compose.yml</code> — all security controls are declared in one file.</li>
+</ol>
+
+<h1>Summary of Defense-in-Depth Layers</h1>
+
+<table>
+  <tr><th>Layer</th><th>Control</th><th>Prevents</th></tr>
+  <tr><td>1</td><td>Docker internal network</td><td>Direct internet access</td></tr>
+  <tr><td>2</td><td>Egress proxy allowlist</td><td>Connections to non-essential hosts</td></tr>
+  <tr><td>3</td><td>Read-only rootfs</td><td>Persistent system modification</td></tr>
+  <tr><td>4</td><td>Non-root + no-new-privileges</td><td>Privilege escalation</td></tr>
+  <tr><td>5</td><td>Capability drop (ALL)</td><td>Kernel-level privilege abuse</td></tr>
+  <tr><td>6</td><td>Resource limits (mem/cpu/pids)</td><td>Denial of service on host</td></tr>
+  <tr><td>7</td><td>No GitHub credentials</td><td>Code exfiltration / repo manipulation</td></tr>
+  <tr><td>8</td><td>Loopback-only gateway port</td><td>Network-adjacent attacks</td></tr>
+  <tr><td>9</td><td>Web tool deny list</td><td>Arbitrary web browsing</td></tr>
+  <tr><td>10</td><td>Host repos read-only mount</td><td>Source code modification</td></tr>
+</table>
+
+<div class="callout">
+  <strong>Contact:</strong> Questions about this deployment can be directed to Xander Hunt (xander@paramify.com), who maintains the Clawbox project and the host-side OpenClaw instance that manages it.
+</div>
+
+</body>
+</html>

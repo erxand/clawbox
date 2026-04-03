@@ -27,15 +27,30 @@
 
 ### T15 — Task timeout + handoff (2026-04-03)
 
+**Run 8 (2026-04-03 10:48) — ISSUE-68 fix confirmed, 13/13 clean:**
+- ✓ **13/13 pass, 0 warn, 0 fail** — fully clean
+- ✓ ISSUE-68 fix confirmed: 13 stale dirs cleaned, unique project name used, TASK.md found in correct dir
+- ✓ Timeout triggered after exactly 1 minute ✓
+- ✓ No gateway connection failures, lock cleaned up, new task starts cleanly
+- **Verdict:** T15 fully reliable. ISSUE-68 workspace contamination fix confirmed working. ✅
+
 **ISSUE-68 found (2026-04-03 06:46) — workspace contamination causes false-positive T15 results:**
 - ✗ T15's `blog-api-timeout-test` dir persisted from prior runs across container restarts (workspace is a volume)
 - ✗ Multiple `taskman-*` dirs from T1 runs also present in workspace
 - ✗ Agent found all 6 existing fully-complete projects and reported them as done in <1 min → timeout never fired
 - ✗ T15 "13/13 passing" was a false positive — the agent did NO new work
 - **Root cause (ISSUE-68):** T15 does `clawbox stop; clawbox start` but doesn't clean the workspace volume. Workspace persists across restarts. Old project dirs from T1/T15 prior runs accumulate over time.
+- **Run 8 (2026-04-03 10:48) — ISSUE-68 fix confirmed, 13/13 clean:**
+- ✓ **13/13 pass, 0 warn, 0 fail** — perfect score
+- ✓ ISSUE-68 fix confirmed: cleanup step removed 13 stale project dirs at start (`blog-api-timeout-test`, `bookstore-*`, `taskman-*`, `concurrent-*`, etc.)
+- ✓ Unique project name used: `blog-api-t15-20260403-104838` (timestamped)
+- ✓ TASK.md found in correct project dir (not a stale dir from prior run)
+- ✓ Timeout triggered after exactly 1 minute ✓
+- ✓ Handoff response: 485 bytes, accurate summary of completed work
+- ✓ Lock cleaned up, new task starts cleanly after timeout
 - **Fix applied (2026-04-03):** (1) T15 setup now runs `rm -rf` on all non-seed project directories in the container workspace before starting the test; (2) T15 uses a unique timestamped project name (`blog-api-t15-YYYYMMDD-HHMMSS`) so re-runs can never find pre-existing work; (3) TASK.md check now searches the specific project dir first.
 - **Pattern:** Same root cause as ISSUE-58 (T2) and ISSUE-59 (T2 + T3) — workspace accumulation over time. Each test that creates projects needs its own cleanup step.
-- **Verdict:** Fix applied. Needs re-run to confirm timeout fires correctly on a clean workspace. ⏳
+- **Verdict:** ISSUE-68 fix confirmed. T15 fully stable and reliable. ✅
 
 ### T11 — Background task mode (2026-04-03)
 
