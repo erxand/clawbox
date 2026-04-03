@@ -40,7 +40,7 @@ PROJECT_NAME="taskman-${RUN_ID}"
 
 # ── Send task ───────────────────────────────────────────────────────
 
-TASK_MSG="Create a NEW project directory called '${PROJECT_NAME}' inside /home/node/.openclaw/workspace/ and build a full task management web app there. Requirements: (1) Express backend with SQLite, (2) API endpoints: GET/POST/PUT/DELETE /tasks, GET /tasks/:id, POST /tasks/:id/mark-done, (3) Simple session-based user authentication, (4) Vanilla JS frontend with login, task list, add/mark-done/delete tasks, (5) Test suite covering all API endpoints, (6) IMPORTANT: each test must be independent and order-independent — use a fresh in-memory database per test run (or before/after hooks to reset state), use unique usernames per test (e.g. 'testuser-' + Date.now()), so that running tests twice in a row or in any order produces the same result. Start both servers and run the tests. Use TASK.md inside the project dir to track progress. Initialize git inside the project dir and commit after each major step (scaffold, backend, tests passing, frontend done)."
+TASK_MSG="Create a NEW project directory called '${PROJECT_NAME}' inside /home/node/.openclaw/workspace/ and build a full task management web app there. IMPORTANT: Do ALL of this work yourself — do NOT spawn subagents or delegate to other sessions. Write every file directly using your own tools. Requirements: (1) Express backend with SQLite, (2) API endpoints: GET/POST/PUT/DELETE /tasks, GET /tasks/:id, POST /tasks/:id/mark-done, (3) Simple session-based user authentication, (4) Vanilla JS frontend with login, task list, add/mark-done/delete tasks, (5) Test suite covering all API endpoints, (6) IMPORTANT: each test must be independent and order-independent — use a fresh in-memory database per test run (or before/after hooks to reset state), use unique usernames per test (e.g. 'testuser-' + Date.now()), so that running tests twice in a row or in any order produces the same result. Start both servers and run the tests. Use TASK.md inside the project dir to track progress. Initialize git inside the project dir and commit after each major step (scaffold, backend, tests passing, frontend done)."
 
 log "Sending task to agent..."
 START_TIME=$(date +%s)
@@ -83,9 +83,9 @@ while [ $(($(date +%s) - START_TIME)) -lt $TIMEOUT_SECONDS ]; do
     #   - All phases checked off (Phase 1-5 all have ✅ — also check last phase marker)
     #   - "Test Suite: N/N passing ✅" near "Backend" and "Frontend" ✅ lines (all done)
     PHASES_DONE=$(echo "$TASK_CONTENT" | grep -cE 'Phase [0-9]+:.*✅' || echo "0")
-    PHASES_DONE=$(echo "$PHASES_DONE" | tr -d ' ')
+    PHASES_DONE=$(echo "$PHASES_DONE" | tr -d '[:space:]')
     PHASES_TOTAL=$(echo "$TASK_CONTENT" | grep -cE '### Phase [0-9]+:' || echo "0")
-    PHASES_TOTAL=$(echo "$PHASES_TOTAL" | tr -d ' ')
+    PHASES_TOTAL=$(echo "$PHASES_TOTAL" | tr -d '[:space:]')
     if echo "$TASK_CONTENT" | grep -qiE '^(\*\*)?Status:.*COMPLETE|^Status:.*COMPLETE|All objectives achieved|DONE — all steps complete'; then
       log "Task marked COMPLETE — exiting poll loop early."
       break
@@ -95,9 +95,16 @@ while [ $(($(date +%s) - START_TIME)) -lt $TIMEOUT_SECONDS ]; do
     fi
   fi
 
+  # Also check task log for completion marker (covers flat-checklist TASK.md style)
+  TASK_LOG_CURRENT=$(cat "$HOME/.clawbox-task.log" 2>/dev/null || echo "")
+  if echo "$TASK_LOG_CURRENT" | grep -q '=== Task completed'; then
+    log "Task log shows completion marker — exiting poll loop early."
+    break
+  fi
+
   # Check git commits (find project git repo created this run)
   GIT_COMMITS=$(docker exec "$CONTAINER" sh -c "find /home/node/.openclaw/workspace -name '.git' -newer /tmp/t1-start-sentinel -maxdepth 3 2>/dev/null | head -1 | xargs dirname 2>/dev/null | xargs -I{} sh -c 'cd {} && git log --oneline 2>/dev/null | wc -l'" 2>/dev/null || echo "0")
-  GIT_COMMITS=$(echo "$GIT_COMMITS" | tr -d ' ')
+  GIT_COMMITS=$(echo "$GIT_COMMITS" | tr -d '[:space:]')
 
   log "Poll #$POLLS — running=$RUNNING task_md=$TASK_MD_FOUND commits=$GIT_COMMITS"
 done
@@ -157,10 +164,23 @@ PATH_3000=$(echo "$PORT_3000_RESULT" | cut -d: -f2)
 PATH_3001=$(echo "$PORT_3001_RESULT" | cut -d: -f2)
 PATH_8080=$(echo "$PORT_8080_RESULT" | cut -d: -f2)
 
-# Check if any port has a running HTTP server (any non-0 code = server is up)
+# Also scan common non-standard ports agents have used (3456, 3457, 3458, 4000, etc.)
+EXTRA_SERVER_PORT=""
+EXTRA_SERVER_CODE="000"
+for extra_port in 3456 3457 3458 4000 4001 5000 8000 8888; do
+  result=$(check_port_smart "$extra_port")
+  code=$(echo "$result" | cut -d: -f1)
+  if [ "$code" != "0" ] && [ "$code" != "000" ]; then
+    EXTRA_SERVER_PORT="$extra_port"
+    EXTRA_SERVER_CODE="$code"
+    break
+  fi
+done
+
+# Check if any port has a running HTTP server (any non-0 and non-000 code = server is up)
 SERVER_ALIVE="no"
-for code in $CURL_3000 $CURL_3001 $CURL_8080; do
-  [ "$code" != "0" ] && SERVER_ALIVE="yes" && break
+for code in $CURL_3000 $CURL_3001 $CURL_8080 $EXTRA_SERVER_CODE; do
+  [ "$code" != "0" ] && [ "$code" != "000" ] && SERVER_ALIVE="yes" && break
 done
 
 # Count running Node.js processes serving HTTP (more reliable than port check)
@@ -187,7 +207,7 @@ if [ -n "$PROJECT_DIR" ]; then
     else
       TESTS_PASSING="no"
     fi
-  elif echo "$TEST_OUTPUT" | grep -qiE '(passing|tests passed|all.*pass|Passed: [1-9])'; then
+  elif echo "$TEST_OUTPUT" | grep -qiE '(passing|tests passed|all.*pass|Passed: [1-9]|Tests:[[:space:]]*[0-9]+ passed)'; then
     TESTS_PASSING="yes"
   elif echo "$TEST_OUTPUT" | grep -qiE '(failing|failed|error)'; then
     TESTS_PASSING="no"
@@ -221,6 +241,7 @@ Agent was asked to build a full-stack task management web app with Express, SQLi
 | Port 3000 (best path: $PATH_3000) | HTTP $CURL_3000 |
 | Port 3001 (best path: $PATH_3001) | HTTP $CURL_3001 |
 | Port 8080 (best path: $PATH_8080) | HTTP $CURL_8080 |
+| Extra port (if non-standard) | ${EXTRA_SERVER_PORT:-(none)} HTTP ${EXTRA_SERVER_CODE} |
 | Any server alive | $SERVER_ALIVE |
 | Node processes | $NODE_SERVERS |
 | Tests passing | $TESTS_PASSING |
@@ -245,10 +266,11 @@ $GIT_LOG
 $([ "$TASK_MD_FOUND" = "yes" ] && echo "✓ Agent used TASK.md for progress tracking" || echo "✗ Agent did NOT use TASK.md")
 $([ "$GIT_COMMITS" -gt 0 ] 2>/dev/null && echo "✓ Agent made $GIT_COMMITS git commits" || echo "✗ Agent made no git commits")
 $([ "$TESTS_PASSING" = "yes" ] && echo "✓ Tests passing" || ([ "$TESTS_PASSING" = "no" ] && echo "✗ Tests failing" || echo "⚠ Tests partial: $TESTS_PASSING"))
-$([ "$SERVER_ALIVE" = "yes" ] && echo "✓ HTTP server responding on at least one port" || echo "✗ No HTTP server detected on ports 3000/3001/8080")
-$([ "$CURL_3000" != "0" ] && echo "✓ Port 3000: HTTP $CURL_3000 (path: $PATH_3000)" || echo "⚠ Port 3000: no response (server may have stopped after test run)")
-$([ "$CURL_3001" != "0" ] && echo "✓ Port 3001: HTTP $CURL_3001 (path: $PATH_3001)" || echo "⚠ Port 3001: no response")
-$([ "$CURL_8080" != "0" ] && echo "✓ Port 8080: HTTP $CURL_8080 (path: $PATH_8080)" || echo "⚠ Port 8080: no response")
+$([ "$SERVER_ALIVE" = "yes" ] && echo "✓ HTTP server responding on at least one port" || echo "✗ No HTTP server detected on ports 3000/3001/8080 or common extras")
+$([ "$CURL_3000" != "0" ] && [ "$CURL_3000" != "000" ] && echo "✓ Port 3000: HTTP $CURL_3000 (path: $PATH_3000)" || echo "⚠ Port 3000: no response (server may have stopped after test run)")
+$([ "$CURL_3001" != "0" ] && [ "$CURL_3001" != "000" ] && echo "✓ Port 3001: HTTP $CURL_3001 (path: $PATH_3001)" || echo "⚠ Port 3001: no response")
+$([ "$CURL_8080" != "0" ] && [ "$CURL_8080" != "000" ] && echo "✓ Port 8080: HTTP $CURL_8080 (path: $PATH_8080)" || echo "⚠ Port 8080: no response")
+$([ -n "$EXTRA_SERVER_PORT" ] && echo "✓ Port $EXTRA_SERVER_PORT (non-standard): HTTP $EXTRA_SERVER_CODE" || echo "")
 $([ "$NODE_SERVERS" -gt 0 ] 2>/dev/null && echo "✓ Node.js process(es) running ($NODE_SERVERS found)" || echo "⚠ No Node.js processes detected")
 
 ### Notes on endpoint detection

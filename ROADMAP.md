@@ -2,6 +2,34 @@
 
 ## Test Results
 
+### T9, T10 — Stability checks (2026-04-03)
+
+**T9 (2026-04-03 00:50) — output modes stability check:**
+- ✓ **18/18 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ `--quiet`, `--json`, context_files count, live e2e: all green
+- **Verdict:** T9 fully stable. ✅
+
+**T10 (2026-04-03 00:51) — session naming stability check:**
+- ✓ **10/10 pass, 1 warn, 0 fail** — same pattern as prior runs
+- ✓ Session continuity (ZEBRA42 recalled), flags, JSON output: all green
+- ⚠ Session isolation: shared agent memory by design (known behavior)
+- **Verdict:** T10 fully stable. ✅
+
+### T1 — Long-running task (2026-04-03)
+
+**Run 8 (2026-04-03 01:36) — ISSUE-64/65/66 fixes applied:**
+- ✓ **TASK.md created** with all steps checked off
+- ✓ **2 git commits** (scaffold → all tests passing + frontend)
+- ✓ **30/30 tests passing** (Jest; `Tests: 30 passed, 30 total`)
+- ✓ **Completed in 183s (~3 min)** — fastest T1 run ever
+- ✓ ISSUE-64 fix confirmed: early-exit via task log completion marker fired on poll #5 (was running full 20min before)
+- ✓ ISSUE-66 fix confirmed: `[:space:]` trimming removes trailing newlines from `grep -c` output (no more `[: 0\n0: integer expression expected`)
+- ✓ ISSUE-65 fix confirmed: "do NOT spawn subagents" instruction — agent worked directly (no subagent delegation)
+- ⚠ Note: Server stopped after test run (expected behavior) — port probes returned 000. Non-standard port (3458) was used. Extra-port scanning added to T1.
+- **Root cause of T1 never detecting early completion:** `=== Task completed ===` pattern didn't match actual `=== Task completed: 2026-04-03 01:39:37 ===` format. Fixed.
+- **Root cause of T1 integer expression errors:** `grep -c` outputs `0\n` (with trailing newline); `tr -d ' '` only strips spaces not newlines. `tr -d '[:space:]'` fixes both.
+- **Verdict:** T1 now exits early when task completes. All core functionality working. ✅
+
 ### T19 — Task early completion + retry flag (2026-04-02)
 
 **Run 1 (2026-04-02 22:50) — new test, first run:**
@@ -821,6 +849,30 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 - **ISSUE-62 found and fixed during development:** `clawbox cp` chown step used `docker exec` without `-u root`, which fails on read-only rootfs containers because the `node` user can't change file ownership. Fixed to `docker exec -u root`.
 - **Key finding:** `docker cp` to non-volume paths (e.g. `/tmp`) fails entirely on read-only rootfs containers. All cp operations must target volume-mounted paths (e.g. `/home/node/.openclaw/workspace`). This is by design — the test validates cp against the workspace volume.
 - **Verdict:** All CLI utility commands working correctly. ISSUE-62 fixed. ✅
+
+### ISSUE-67: T1 test detection improvements (2026-04-03) ✅ Fixed 2026-04-03
+**Problem 1 (Jest detection):** T1's test pass detection pattern `(passing|tests passed|all.*pass|Passed: [1-9])` didn't match Jest's summary format `Tests: 30 passed, 30 total`. Reported "unknown" even on a clean 30/30 pass.
+**Fix 1:** Added `Tests:[[:space:]]*[0-9]+ passed` to the regex. Now matches both Mocha-style and Jest-style output.
+
+**Problem 2 (SERVER_ALIVE false positive):** When no ports respond, `check_port_smart` returns `best_code="000"`. The SERVER_ALIVE check used `[ "$code" != "0" ]` — but `"000"` != `"0"` is true, so `SERVER_ALIVE="yes"` even when nothing is running.
+**Fix 2:** Added `[ "$code" != "000" ]` to the SERVER_ALIVE check.
+
+**Problem 3 (Non-standard ports):** Agent has consistently used non-standard ports (3456, 3457, 3458) but T1 only checked 3000/3001/8080. Servers would be detected as "dead" even when fully running.
+**Fix 3:** Added extra-port scanning loop that checks ports 3456, 3457, 3458, 4000, 4001, 5000, 8000, 8888. Results shown in result table and assessment. ✅ Fixed 2026-04-03.
+
+### ISSUE-66: T1 poll loop `integer expression expected` — `grep -c` includes trailing newline ✅ Fixed 2026-04-03
+**Problem:** T1's phase-completion check used `[ "$PHASES_TOTAL" -gt 0 ]` where `PHASES_TOTAL` was set via `$(echo "..." | grep -cE '...' || echo "0")`. `grep -c` outputs a number followed by a newline (`0\n`). `tr -d ' '` strips spaces but NOT newlines, so `PHASES_TOTAL="0\n"`. The `[` command sees `0\n0` (the variable + the literal `0` from `echo "0"`) and reports "integer expression expected."
+**Symptom:** Every T1 poll emitted `tests/T1-long-running.sh: line 92: [: 0↵0: integer expression expected` to stderr, cluttering the log.
+**Fix:** Changed `tr -d ' '` to `tr -d '[:space:]'` for `PHASES_DONE`, `PHASES_TOTAL`, and `GIT_COMMITS` variables. `[:space:]` matches spaces, tabs, and newlines, ensuring clean integer values. ✅ Fixed 2026-04-03.
+
+### ISSUE-65: T1 agent spawns subagent to immediately "complete" task ✅ Fixed 2026-04-03
+**Problem:** Like ISSUE-63 (T15), T1's agent default behavior for large full-stack tasks is to spawn a subagent and return in ~17 seconds. The T1 task message had no instruction preventing this. The T1 poll loop would wait the full 20-minute ceiling without finding any progress (the subagent works independently), then incorrectly report partial/missing results.
+**Symptom (T1 runs 2026-04-03 00:51 and 01:13):** Task log showed `=== Task completed ===` in 17s with "I'll spawn a subagent to build it out." Poll ran for 20 minutes and was killed by exec timeout before writing results.
+**Fix:** Added "IMPORTANT: Do ALL of this work yourself — do NOT spawn subagents or delegate to other sessions. Write every file directly using your own tools." to the T1 task message (same fix as ISSUE-63 for T15). ✅ Fixed 2026-04-03.
+
+### ISSUE-64: T1 poll loop never detects early completion — runs full 20 minutes ✅ Fixed 2026-04-03
+**Problem:** T1's early-exit checks only matched TASK.md content patterns (`Status: COMPLETE`, `Phase N: ✅`). The agent's preferred flat-checklist TASK.md style (all `[x]` bullets) and the task log completion marker (`=== Task completed: <timestamp> ===`) were not checked. The poll loop would always run the full 20-minute ceiling, even when the task was done in 6 minutes. This caused T1 to be killed by the exec tool's timeout before writing its result file.
+**Fix:** Added task log completion check to poll loop: `if echo "$TASK_LOG_CURRENT" | grep -q '=== Task completed'; then break; fi`. Note: the actual marker is `=== Task completed: <timestamp> ===` so the grep matches the prefix. With this fix, T1 Run 8 exited on poll #5 (~3 min) instead of timing out at 20 min. ✅ Fixed 2026-04-03.
 
 ### ISSUE-63: Agent spawns subagent to defeat task timeout ✅ Fixed 2026-04-02
 **Problem:** When given a complex task with `--timeout 1`, the container agent's default behavior for large tasks is to spawn a subagent and return immediately. The parent agent "completes" in <1 minute (before the timeout fires), so the timeout + handoff mechanism is never triggered. The subagent runs independently with no timeout enforcement.
