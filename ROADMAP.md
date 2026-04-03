@@ -2,6 +2,37 @@
 
 ## Test Results
 
+### T19 — Task early completion + retry flag (2026-04-02)
+
+**Run 1 (2026-04-02 22:50) — new test, first run:**
+- ✓ **14/14 pass, 0 warn, 0 fail** — clean first run
+- ✓ `clawbox task --timeout 5` on a fast task returns non-blocking (13s pre-flight + background)
+- ✓ Fast task completes in ~45s (well under 5min timeout)
+- ✓ No TIMEOUT marker in log — watchdog never fires
+- ✓ No handoff prompt emitted — correct behavior when task finishes naturally
+- ✓ Task completion marker (`=== Task completed ===`) present in log
+- ✓ Lock file cleaned up after fast task
+- ✓ No orphaned watchdog processes remain
+- ✓ Output file (`t19-done.txt`) created in container with correct content
+- ✓ `--retry` flag documented in help
+- ✓ `--retry 1` accepted, task succeeds on first attempt
+- ✓ `--retry 0` accepted without error (no-retry mode)
+- ✓ `--retry` flag works in any position (after message arg)
+- ✓ `task-status` shows useful info after completion
+- **Key finding:** `clawbox task` takes ~13s to launch (pre-flight container check + background spawn). This is the `assert_container_running` + gateway health check overhead, not actual blocking. The task itself runs asynchronously as expected. Threshold updated from 5s → 15s to reflect reality.
+- **Key finding (Phase 1 validated):** When `--timeout N` is set but the task completes before N minutes, the watchdog is silently cleaned up with no side effects. No spurious handoff, no log noise, no stale processes. This code path was never explicitly tested before.
+- **Verdict:** T19 fully passing. Early completion + retry flag behavior confirmed correct. ✅
+
+### T7 — UX / Friction audit (2026-03-26, re-run 2026-03-29, re-run 2026-03-31, re-run 2026-04-02)
+
+**Re-run (2026-04-02 22:48) — updated to include new commands (cp, logs-tail, install):**
+- ✓ **44/44 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ Now checks all 22 commands in help output (was 19 before; added `cp`, `logs-tail`, `install`)
+- ✓ Container start: 14s, first task latency: 5s
+- ✓ All error paths, README accuracy, status output, and QoL checks holding
+- **What changed:** T7 previously checked for 19 commands in help; after T18 (ISSUE-62 fix) added `cp`, and other commands (`logs-tail`, `install`) were added, the test wasn't tracking them. Updated command list covers all currently documented commands.
+- **Verdict:** UX remains fully clean end-to-end with all newly added commands. ✅
+
 ### T8 — Context injection (2026-03-27, re-run 2026-03-29, re-run 2026-03-31, re-run 2026-04-02)
 
 **Re-run (2026-03-29 22:41) — test script rewrite + fresh validation:**
