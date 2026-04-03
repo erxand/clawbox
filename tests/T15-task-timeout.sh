@@ -55,12 +55,43 @@ log "Starting fresh container..."
 log "Waiting 15s for gateway to fully initialise..."
 sleep 15
 
+# ── ISSUE-68 fix: Clean stale project directories from prior test runs ──────
+# T15 reuses 'blog-api-timeout-test' as the project dir. If this directory (or
+# other accumulated taskman-* dirs from T1 runs) exists from prior runs, the
+# agent will find the existing complete projects, report "all work done", and
+# return in <1 minute — defeating the timeout test entirely.
+# Solution: wipe all project directories (not seed/config files) before each run.
+log "Cleaning stale project directories from container workspace..."
+docker exec "$CONTAINER" sh -c "
+  cd /home/node/.openclaw/workspace
+  for d in */ ; do
+    d=\${d%/}
+    case \"\$d\" in
+      memory|.git|.openclaw) continue ;;
+    esac
+    # Skip seed/config files at root (AGENTS.md etc are files not dirs)
+    if [ -d \"\$d\" ]; then
+      echo \"  Removing: \$d\"
+      rm -rf \"\$d\"
+    fi
+  done
+  echo \"Cleanup complete.\"
+" 2>/dev/null || log "Warning: workspace cleanup failed (non-fatal)"
+
+# Use a unique project dir per run so the agent always starts fresh
+PROJECT_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+PROJECT_NAME="blog-api-t15-${PROJECT_TIMESTAMP}"
+WORKSPACE_PATH="/home/node/.openclaw/workspace"
+
+log "Project name for this run: $PROJECT_NAME"
+
 # ── Test 1: --timeout flag accepted + task starts ───────────────────
 
 log "Test 1: --timeout flag is accepted + log path printed..."
 
-# Give a complex task that should NOT finish in 1 minute
-TASK_DESC="IMPORTANT: Do ALL of this work yourself — do NOT spawn subagents or delegate to other sessions. Write every file directly using your own tools. Build a complete REST API for a blog platform in /home/node/.openclaw/workspace/blog-api-timeout-test with: (1) Express.js server with JWT authentication middleware, (2) endpoints for users (register, login, profile), posts (CRUD), comments (CRUD on posts), (3) in-memory data store with proper validation, (4) comprehensive test suite with at least 20 tests using Jest, (5) API documentation in README.md. Make sure all tests pass. Create TASK.md with your plan and progress."
+# Give a complex task that should NOT finish in 1 minute.
+# ISSUE-68: Use a unique project name per run to prevent workspace contamination.
+TASK_DESC="IMPORTANT: Do ALL of this work yourself — do NOT spawn subagents or delegate to other sessions. Write every file directly using your own tools. Build a complete REST API for a blog platform in ${WORKSPACE_PATH}/${PROJECT_NAME} with: (1) Express.js server with JWT authentication middleware, (2) endpoints for users (register, login, profile), posts (CRUD), comments (CRUD on posts), (3) in-memory data store with proper validation, (4) comprehensive test suite with at least 20 tests using Jest, (5) API documentation in README.md. Make sure all tests pass. Create TASK.md with your plan and progress."
 
 # Capture the task start output (ISSUE-43: extract specific log path from output)
 TASK_START_OUTPUT=$("$CLAWBOX" task --timeout 1 --session "t15-timeout-test" "$TASK_DESC" 2>&1 || true)
@@ -166,10 +197,11 @@ fi
 
 # ── Test 7: TASK.md created or updated in workspace ─────────────────
 
-log "Test 7: TASK.md created in workspace..."
+log "Test 7: TASK.md created in workspace (project: $PROJECT_NAME)..."
+# ISSUE-68: Check the specific project dir first, then fall back to whole-workspace search
 TASK_MD=$(docker exec "$CONTAINER" \
-  sh -c "find /home/node/.openclaw/workspace -name TASK.md -not -path '*/node_modules/*' 2>/dev/null | head -3" \
-  2>/dev/null || echo "")
+  sh -c "find /home/node/.openclaw/workspace/${PROJECT_NAME} -name TASK.md -not -path '*/node_modules/*' 2>/dev/null | head -1; find /home/node/.openclaw/workspace -name TASK.md -not -path '*/node_modules/*' 2>/dev/null | head -3" \
+  2>/dev/null | sort -u | head -3 || echo "")
 TASK_MD_CONTENT=""
 if [ -n "$TASK_MD" ]; then
   TASK_MD_CONTENT=$(docker exec "$CONTAINER" cat "$(echo "$TASK_MD" | head -1)" 2>/dev/null || echo "")

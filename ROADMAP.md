@@ -2,6 +2,34 @@
 
 ## Test Results
 
+### T20 — Workspace persistence (2026-04-03)
+
+**Run 1 (2026-04-03 06:54) — first run, new test:**
+- ✓ **12/13 pass, 1 warn, 0 fail** — strong first-run result
+- ✓ Canary file written before restart, exact content match after restart
+- ✓ Nested directory structure (`nested/deep/file.txt`) persists
+- ✓ Git history intact (1 commit before = 1 commit after)
+- ✓ Container rootfs is read-only (writes rejected at OS level)
+- ✓ Agent (`clawbox run`) can read persisted workspace files (referenced content in response)
+- ✓ Agent can write to workspace (`agent-wrote.txt` created with expected content)
+- ✓ Workspace has 25 top-level items after restart (not wiped)
+- ✓ Container restarts in 14s
+- ⚠ AGENTS.md check false-negative: `wc -c < file` shell redirection doesn't work correctly via `docker exec` without shell context. File exists and has 7874 bytes. Fixed: now uses `sh -c "wc -c file | awk '{print $1}'"`.
+- **Key finding:** Docker volume persistence is rock-solid. Files, nested dirs, git repos, and even agent-written files all survive stop/start. The agent correctly reads and writes to the persisted workspace. No data loss at any level.
+- **Verdict:** Workspace persistence is fully reliable. The fundamental guarantee for multi-session workflows is confirmed. ✅
+
+### T15 — Task timeout + handoff (2026-04-03)
+
+**ISSUE-68 found (2026-04-03 06:46) — workspace contamination causes false-positive T15 results:**
+- ✗ T15's `blog-api-timeout-test` dir persisted from prior runs across container restarts (workspace is a volume)
+- ✗ Multiple `taskman-*` dirs from T1 runs also present in workspace
+- ✗ Agent found all 6 existing fully-complete projects and reported them as done in <1 min → timeout never fired
+- ✗ T15 "13/13 passing" was a false positive — the agent did NO new work
+- **Root cause (ISSUE-68):** T15 does `clawbox stop; clawbox start` but doesn't clean the workspace volume. Workspace persists across restarts. Old project dirs from T1/T15 prior runs accumulate over time.
+- **Fix applied (2026-04-03):** (1) T15 setup now runs `rm -rf` on all non-seed project directories in the container workspace before starting the test; (2) T15 uses a unique timestamped project name (`blog-api-t15-YYYYMMDD-HHMMSS`) so re-runs can never find pre-existing work; (3) TASK.md check now searches the specific project dir first.
+- **Pattern:** Same root cause as ISSUE-58 (T2) and ISSUE-59 (T2 + T3) — workspace accumulation over time. Each test that creates projects needs its own cleanup step.
+- **Verdict:** Fix applied. Needs re-run to confirm timeout fires correctly on a clean workspace. ⏳
+
 ### T11 — Background task mode (2026-04-03)
 
 **Run (2026-04-03 04:48) — stability check:**
@@ -886,6 +914,12 @@ Run two separate `clawbox run` commands simultaneously pointing at different wor
 - **ISSUE-62 found and fixed during development:** `clawbox cp` chown step used `docker exec` without `-u root`, which fails on read-only rootfs containers because the `node` user can't change file ownership. Fixed to `docker exec -u root`.
 - **Key finding:** `docker cp` to non-volume paths (e.g. `/tmp`) fails entirely on read-only rootfs containers. All cp operations must target volume-mounted paths (e.g. `/home/node/.openclaw/workspace`). This is by design — the test validates cp against the workspace volume.
 - **Verdict:** All CLI utility commands working correctly. ISSUE-62 fixed. ✅
+
+### ISSUE-68: T15 workspace contamination causes false-positive timeout test results ✅ Fixed 2026-04-03
+**Problem:** T15 stops and restarts the container (`clawbox stop; clawbox start`) but the workspace is a Docker volume that persists across restarts. Prior T1 and T15 runs leave behind `taskman-*`, `blog-api-timeout-test`, and other completed project directories. When T15's agent starts, it finds 5-6 fully-complete pre-existing projects, reports "all work done", and exits in <1 minute — the 1-minute timeout never fires. T15 reports 13/13 passing even though the agent did NO new work and the timeout mechanism was never actually tested.
+**Symptom (2026-04-03 04:48 run):** Handoff response said "All 6 project directories are fully complete with all work committed. No uncommitted work found." — TASK.md check found `blog-api-timeout-test`, `taskman-1775206351`, etc. from prior runs.
+**Fix:** (1) T15 setup now removes all non-seed project directories from the container workspace before each run using `docker exec rm -rf`. (2) T15 uses a unique timestamped project name (`blog-api-t15-YYYYMMDD-HHMMSS`) so re-runs can never find pre-existing work for their specific project. (3) TASK.md check now searches the specific project directory first.
+**Pattern:** Same root cause as ISSUE-58 (T2) and ISSUE-59 (T2/T3) — workspace accumulates over time and pollutes later test runs. Each test that creates projects needs workspace cleanup in setup.
 
 ### ISSUE-67: T1 test detection improvements (2026-04-03) ✅ Fixed 2026-04-03
 **Problem 1 (Jest detection):** T1's test pass detection pattern `(passing|tests passed|all.*pass|Passed: [1-9])` didn't match Jest's summary format `Tests: 30 passed, 30 total`. Reported "unknown" even on a clean 30/30 pass.
