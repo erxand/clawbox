@@ -4,6 +4,13 @@
 
 ### T20 — Workspace persistence (2026-04-03)
 
+**Run 2 (2026-04-03 08:48) — AGENTS.md fix confirmed, 13/13 clean:**
+- ✓ **13/13 pass, 0 warn, 0 fail** — perfect score
+- ✓ AGENTS.md check fix confirmed: `wc -c '${WORKSPACE}/AGENTS.md' | awk '{print $1}'` now returns correct byte count (7874), no shell redirection issue
+- ✓ All other checks unchanged: canary, nested dirs, git history, rootfs read-only, agent read/write all green
+- ✓ Container restart time: 14s (consistent with Run 1)
+- **Verdict:** T20 fully stable. Workspace persistence is rock-solid. ✅
+
 **Run 1 (2026-04-03 06:54) — first run, new test:**
 - ✓ **12/13 pass, 1 warn, 0 fail** — strong first-run result
 - ✓ Canary file written before restart, exact content match after restart
