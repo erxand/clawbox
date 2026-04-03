@@ -2,7 +2,7 @@
 
 ## Test Results
 
-### T8 — Context injection (2026-03-27, re-run 2026-03-29, re-run 2026-03-31)
+### T8 — Context injection (2026-03-27, re-run 2026-03-29, re-run 2026-03-31, re-run 2026-04-02)
 
 **Re-run (2026-03-29 22:41) — test script rewrite + fresh validation:**
 - ✓ **10/10 pass, 0 warn, 0 fail**
@@ -15,6 +15,14 @@
 - ✓ Missing message → usage hint
 - **Note:** Test script rewritten from `eval`-based unit tests (fragile, broke with complex quoting in cmd_run) to behavioral live-container tests. More reliable and tests actual behavior end-to-end.
 - **Verdict:** Context injection confirmed working across all modes. ✅
+
+**Re-run (2026-04-02 18:49) — stability check:**
+- ✓ **10/10 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ `--context <file>`: agent references injected add/subtract code ✓
+- ✓ `--context <dir>`: all 3 symbols (add, subtract, PI) mentioned, node_modules excluded ✓
+- ✓ `--thinking minimal`, `--quiet`, `--json` all working ✓
+- ✓ Error paths (invalid path, missing message) still correct ✓
+- **Verdict:** T8 fully stable. ✅
 
 **Re-run (2026-03-31 20:42) — stability check post all recent fixes:**
 - ✓ **10/10 pass, 0 warn, 0 fail** — perfect score maintained
@@ -177,13 +185,14 @@
 - **Root cause (ISSUE-45):** `find | head -1` is alphabetical, not time-ordered. Old workspace artifacts pollute TASK.md detection.
 - **Fix applied (2026-03-29):** T3 now uses `find -newer` to detect only TASK.md created in current run; endpoint checks restart the server explicitly before curling. ✅
 
-### T4 — Error recovery (2026-03-26, re-run 2026-03-28, re-run 2026-03-28 #2, re-run 2026-03-30, re-run 2026-03-31)
+### T4 — Error recovery (2026-03-26, re-run 2026-03-28, re-run 2026-03-28 #2, re-run 2026-03-30, re-run 2026-03-31, re-run 2026-04-02)
 - ✓ Agent correctly diagnosed `MODULE_NOT_FOUND` error in 26s (first run), 29s (re-run 1), 31s (re-run 2), 26s (re-run 3)
 - ✓ Identified dead `require('nonexistent-package')` and removed it all four times
 - ✓ Verified server starts and GET / returns `Hello` (HTTP 200)
 - ✓ Re-run #2 (2026-03-28 14:40) confirms fix still works cleanly after ISSUE-41 (workspace path) changes
 - ✓ Re-run #3 (2026-03-30 00:42) confirms continued stability — consistent 26s diagnosis on latest container image
 - ✓ Re-run #4 (2026-03-31 22:47) confirms continued stability after ISSUE-49/50/53/54 fixes — 59s diagnosis, clean pass
+- ✓ Re-run #5 (2026-04-02 18:49) confirms continued stability — 27s diagnosis, clean pass
 - No issues observed — agent performs consistently well on straightforward error recovery across all runs
 
 ### T1 — Long-running task (2026-03-27 runs + 2026-03-28 re-run + 2026-03-29 re-run + 2026-03-30 re-run + 2026-03-31 re-run + 2026-04-01 re-run)
@@ -423,6 +432,14 @@ Deliberately introduce errors during a task (kill a dependency, corrupt a file, 
 
 ### T5 — Real-world project onboarding ✅ 2026-03-26, re-runs 2026-03-29, 2026-03-30, 2026-03-31
 Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask the agent to: (1) understand the codebase, (2) add a new feature, (3) write tests, (4) make sure existing tests pass. Measure quality and completeness.
+
+**Re-run (2026-04-02 18:47) — stability check:**
+- ✓ **13/13 pass (5/5 assessment checks), 0 warn, 0 fail** — all tests green
+- ✓ Middleware created: `src/middleware/rateLimit.js` with per-IP tracking, configurable limit/window, `setInterval.unref()` cleanup
+- ✓ Middleware wired into `src/index.js`, tests written, all 13 tests pass (9 existing + 4 new rate limit tests)
+- ✓ Completed in 81s (~1.3 min) — fastest T5 run ever
+- ✓ Agent also fixed existing test compat issue (done callbacks → async/await for Node 22 test runner)
+- **Verdict:** T5 fully stable, agent continues to produce high-quality middleware code. ✅
 
 **Re-run (2026-04-01 00:45) — stability check post all ISSUE-49/50/51/52/53/54/55/56 fixes:**
 - ✓ **12/12 pass, 0 warn, 0 fail** — all tests green
