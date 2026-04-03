@@ -2,6 +2,42 @@
 
 ## Test Results
 
+### T21 — JSON output completeness + CLAWBOX_DIR env override (2026-04-03)
+
+**Run 1 (2026-04-03 12:56) — new test, first run:**
+- ✓ **21/21 pass, 0 warn, 0 fail** — perfect score on first run
+- ✓ Phase 1 (JSON completeness): `--json` output is valid JSON with all 4 documented keys (`response`, `elapsed_ms`, `timestamp`, `context_files`); `elapsed_ms` is a positive integer; `timestamp` is ISO-8601; `context_files=0` without context, `>0` with context; `jq` pipeline extraction works; `--session` adds `session` key; `--quiet` has no banner on stdout
+- ✓ Phase 2 (CLAWBOX_DIR): `CLAWBOX_DIR` documented in help; override to project dir works; `/nonexistent` gives meaningful error; `GATEWAY_PORT` documented
+- ✓ Phase 3 (task-status/task-logs): `task-status` with no task produces clean output; references task state; is human-readable (not JSON); `task-logs` with no log gives graceful error
+- **Key findings:** `--json` schema is complete and consistent; `--session` key is included in JSON output; `task-logs` error message correctly guides users to start a task first
+- **Verdict:** JSON output is production-grade and pipeable. CLAWBOX_DIR override works as documented. task-status/task-logs UX is clean. ✅
+
+### T4 — Error recovery (2026-04-03)
+
+**Re-run (2026-04-03 12:50) — stability check:**
+- ✓ **pass, 0 warn, 0 fail** — clean pass
+- ✓ Agent diagnosed `Cannot find module 'nonexistent-package'` in 56s
+- ✓ Identified and removed unused `require('nonexistent-package')` line
+- ✓ Server starts cleanly, GET / returns `Hello`
+- **Verdict:** T4 fully stable. ✅
+
+### T16 — `clawbox doctor` validation (2026-04-03)
+
+**Re-run (2026-04-03 12:52) — stability check:**
+- ✓ **27/27 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ Phase 1 (healthy container): 21/21 internal checks pass
+- ✓ Phase 2 (stopped container): correctly reports ✗ failures
+- ✓ Phase 5 (edge cases): wrong port detected correctly
+- **Verdict:** `clawbox doctor` continues to be fully stable. ✅
+
+### T12 — cancel command (2026-04-03)
+
+**Re-run (2026-04-03 12:52) — stability check (container warm):**
+- ✓ **18/18 pass, 0 warn, 0 fail** — perfect score
+- ✓ All cancel scenarios: idle no-op, stale lock cleanup, live task SIGTERM, UX hints: all green
+- **Note:** First run (container still starting) showed 17/1 due to timing — assert_container_running fired before container was healthy. Second run fully clean.
+- **Verdict:** T12 fully stable. ✅
+
 ### T20 — Workspace persistence (2026-04-03)
 
 **Run 2 (2026-04-03 08:48) — AGENTS.md fix confirmed, 13/13 clean:**
