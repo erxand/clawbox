@@ -2,6 +2,25 @@
 
 ## Test Results
 
+### T30 — Shell automation + exit code contract (2026-04-04)
+
+**Run 1 (2026-04-04 08:52) — new test, first run:**
+- ✓ **31/32 pass, 1 warn, 0 fail** — near-perfect score on first run (warn was a false-positive)
+- ✓ Phase 1 (exit code contract): version/help/--help/status → exit 0; run-no-args/ask-no-args/unknown-cmd/invalid-context/empty-thinking → exit 1
+- ✓ Phase 2 (conditional execution): `&&` executes on success, `||` on failure, `if/then` branches correctly, `if/else` failure branch taken on exit 1
+- ✓ Phase 3 (pipeline/redirection): command substitution captures response only (no banner bleed), `--json | jq` pipeline works, file redirect works, `--quiet` stdout is banner-free
+- ✓ Phase 4 (set -e / pipefail): `set -e` script exits on clawbox failure, continues on success; `set -o pipefail` propagates non-zero exit through pipelines
+- ✓ Phase 5 (scripting idioms): `doctor` (0), `task-status` (0), `cancel` no-task (0), `GATEWAY_PORT` env override, version output machine-parseable, exit 2 documented in help
+- ✓ Phase 6 (source audit): 4 exit-0 paths, 28 exit-1 paths, exit-2 rate-limit path, `CLAWBOX_RATE_LIMITED` sentinel, `assert_not_busy` exit-1 confirmed
+- ⚠ `assert_container_running` check: grep window too narrow (10 lines); function body has exit-1 at line 58 but check looked only in first 10 lines. Fixed to 40-line window; subsequent runs will pass this cleanly.
+- **Key finding:** clawbox's exit code contract is complete and correct. Success is always 0, user errors always 1, rate-limit always 2. Banners go to stderr, responses to stdout — making `--quiet` mode fully pipeline-safe. set -e and set -o pipefail are both compatible. This is the first test to exhaustively verify scripting idioms.
+- **Verdict:** Shell automation contract is solid. 31/32 on first run with only a benign test-script grep-window warn. ✅
+
+**Run 2 (2026-04-04 09:00) — grep-window fix validated:**
+- ✓ **32/32 pass, 0 warn, 0 fail** — perfect score
+- ✓ `assert_container_running` check now uses 40-line function-body window instead of 10-line grep; correctly finds exit 1 at line 14 of function body
+- **Verdict:** T30 fully clean. ✅
+
 ### T29 — stdin / pipe input support (2026-04-04)
 
 **Run 1 (2026-04-04 06:55) — new feature + new test, first run:**
