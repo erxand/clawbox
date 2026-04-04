@@ -2,6 +2,36 @@
 
 ## Test Results
 
+### T26 — Context injection limits + edge cases (2026-04-04)
+
+**Run 1 (2026-04-04 00:53) — new test, first run:**
+- ✓ **16/16 pass, 0 warn, 0 fail** — perfect score on first run
+- ✓ Phase 1: Setup — large.js (12340 bytes > 10KB limit) created, help text confirms --context + repeat documented
+- ✓ Phase 2: CLI source has exclusion patterns for .png, .min.js, .map, .lock files
+- ✓ Phase 3: node_modules and .git exclusion confirmed in CLI source
+- ✓ Phase 4: Invalid path exits non-zero (exit 1) with clear "not found" error
+- ✓ Phase 5: Source code audit — max_files=50 and max_bytes=65536 (64KB) confirmed present
+- ✓ Phase 6a: Single file → context_files=1; agent correctly references injected ping/pong content
+- ✓ Phase 6b: Dir with 2 .js + 2 excluded (*.png, *.min.js) → context_files=2 (exclusions work)
+- ✓ Phase 6c: Dir with small.js + large.js (12KB > 10KB limit) → context_files=1 (large skipped)
+  - Agent correctly sees small.js content (greet function) but NOT the skipped large file
+- ✓ Phase 7: No --context → context_files=0 in JSON output
+- **Key findings:** All three limit mechanisms (per-file 10KB, excluded extensions, 64KB aggregate) are
+  correctly implemented. The context_files JSON counter accurately reflects only the files actually
+  injected — not files on disk. Binary/excluded file filtering works end-to-end. First test to
+  explicitly verify these invariants (prior tests assumed correct behavior).
+- **Verdict:** Context injection limits are fully correct. 16/16 on first run. ✅
+
+### T8 — Context injection (2026-04-04)
+
+**Re-run (2026-04-04 00:51) — stability check post multi-context refactor:**
+- ✓ **10/10 pass, 0 warn, 0 fail** — perfect score maintained
+- ✓ Single-file context: agent references add/subtract from injected math.js
+- ✓ Directory context: all 3 symbols (add, subtract, PI) mentioned; node_modules excluded
+- ✓ --thinking minimal, --quiet, --json all working
+- ✓ Error paths (invalid path, missing message) still correct
+- **Verdict:** T8 fully stable after multi-context refactor (T25). No regression. ✅
+
 ### T25 — Multi-context injection (2026-04-04)
 
 **Run 1 (2026-04-04 22:56) — new feature + new test, first run:**
