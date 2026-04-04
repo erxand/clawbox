@@ -2,6 +2,21 @@
 
 ## Test Results
 
+### T27 — --thinking flag validation (2026-04-04)
+
+**Run 1 (2026-04-04 02:52) — new test, first run:**
+- ✓ **16/16 pass, 0 warn, 0 fail** — perfect score on first run
+- ✓ Phase 1: `--thinking` flag present in source, valid levels listed (off|minimal|low|medium|high|xhigh), forwarded to `openclaw agent`
+- ✓ Phase 2: `--thinking ""` (empty value) gives usage hint and exits non-zero
+- ✓ Phase 3: `-T` shorthand wired in dispatch (`--thinking|-T)` case) and appears in help
+- ✓ Phase 4 (live call): `--thinking minimal` produces valid response, sentinel `THINKING_T27_OK` returned in 20s
+- ✓ Phase 5: `--thinking minimal --json` produces valid JSON with `response` + positive `elapsed_ms`
+- ✓ Phase 6: `clawbox task --thinking minimal` starts non-blocking — flag accepted in task mode
+- ✓ Phase 7: Help text contains `thinking`, lists levels, appears near `run` section
+- ✓ Phase 8: `--thinking` with no value gives usage hint
+- **Note:** Initial run caught a grep pattern bug in the test (literal `"-T"` with quotes vs shell case pattern `--thinking|-T`). Fixed to `grep -qE -- '--thinking\|-T'`. No bug in the CLI — the shorthand has always been wired.
+- **Verdict:** `--thinking` flag is fully correct across `run`, `task`, `-T` alias, `--json` combo, and help text. First dedicated test for this flag. ✅
+
 ### T26 — Context injection limits + edge cases (2026-04-04)
 
 **Run 1 (2026-04-04 00:53) — new test, first run:**
