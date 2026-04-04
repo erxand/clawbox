@@ -2,6 +2,28 @@
 
 ## Test Results
 
+### T25 — Multi-context injection (2026-04-04)
+
+**Run 1 (2026-04-04 22:56) — new feature + new test, first run:**
+- ✓ **16/16 pass, 0 warn, 0 fail** — perfect score on first run
+- ✓ Phase 1: Two files via `--context file1 --context file2` — both referenced in response (add/multiply + greet/shout)
+- ✓ Phase 2: JSON `context_files=2` — sums correctly across multiple `--context` args
+- ✓ Phase 3: Three files — all function names from all three files (add, multiply, greet, shout, clamp) cited
+- ✓ Phase 4: File + directory mix — `context_files=2`, both utils.js (clamp) and helpers/format.js (formatDate) referenced
+- ✓ Phase 5: Error handling — first invalid path exits with "not found" error, no agent call made
+- ✓ Phase 6: Reversed flag order — `context_files=2` regardless of `--context` flag order
+- ✓ Phase 7: Help text mentions "repeat" for multi-context
+- ✓ Phase 8: Single `--context` regression — `context_files=1`, response correct (no regression)
+- **Key finding:** `--context` can now be specified multiple times. `context_files` JSON key sums all injected files across all paths. Error handling is fail-fast (first bad path exits immediately). Directory + file mix works correctly. Fix for Phase 4 test: use file redirect instead of `$()` with `2>&1` when capturing JSON output — the `▶ Attaching...` banner goes to stderr in `--json` mode, and mixing it into `$()` capture corrupts the JSON parse.
+- **Verdict:** Multi-context injection is fully functional. Feature implemented and tested in single session. ✅
+
+### FEATURE: Multi-context support — `--context` can be repeated (2026-04-04)
+**Problem:** `clawbox run --context path1 --context path2 "message"` was not supported — only the last `--context` flag was used (variable was overwritten each time).
+**Use case:** Cross-file analysis: `clawbox run --context src/auth.js --context src/utils.js "explain how auth depends on utils"`. Previously required directory context (which injects everything) or manual file concatenation.
+**Fix:** Changed `local context_path=""` → `local -a context_paths=()` in both `cmd_run` and `cmd_task`. Each `--context` arg is appended to the array. Context building iterates all paths, accumulating into a single block with per-path headers. `context_files` JSON key sums files across all paths. Error handling is fail-fast on first invalid path.
+**Help text:** Updated to say "repeat for multiple paths" instead of just describing a single path.
+**Result:** T25 confirms 16/16 checks pass. ✅
+
 ### T24 — Context injection at scale + clawbox clean abort (2026-04-03)
 
 **Run 1 (2026-04-03 20:56) — new test, first run:**

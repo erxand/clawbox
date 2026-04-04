@@ -247,14 +247,14 @@ cmd_chat() {
 }
 
 cmd_run() {
-  # clawbox run [--context <path>] [--thinking <level>] [--session <name>] [--quiet] [--json] [--retry <n>] "your message"
-  # --context <path>    Attach file(s) as context (file or directory)
+  # clawbox run [--context <path>]... [--thinking <level>] [--session <name>] [--quiet] [--json] [--retry <n>] "your message"
+  # --context <path>    Attach file(s) as context (file or directory; can be specified multiple times)
   # --thinking <level>  Thinking level: off|minimal|low|medium|high|xhigh
   # --session <name>    Named session key for conversation continuity (e.g. "myproject")
   # --quiet             Suppress status banners; only print the agent's response
   # --json              Output result as JSON: {response, elapsed_ms, timestamp, context_files}
   # --retry <n>         Retry up to N times (60s delay) if API rate-limited (default: 0)
-  local context_path=""
+  local -a context_paths=()
   local thinking_level=""
   local session_key=""
   local output_mode="normal"  # normal | quiet | json
@@ -264,11 +264,12 @@ cmd_run() {
   while [[ $# -gt 0 ]]; do
     case "${1:-}" in
       --context|-c)
-        context_path="${2:-}"
-        if [ -z "$context_path" ]; then
+        local _ctx_path="${2:-}"
+        if [ -z "$_ctx_path" ]; then
           echo "Usage: clawbox run --context <path> \"message\""
           exit 1
         fi
+        context_paths+=("$_ctx_path")
         shift 2
         ;;
       --thinking|-T)
@@ -326,62 +327,65 @@ cmd_run() {
 
   local context_file_count=0
 
-  # Build context block if --context was given
-  if [ -n "$context_path" ]; then
-    if [ ! -e "$context_path" ]; then
-      echo "Error: --context path not found: $context_path" >&2
-      exit 1
-    fi
-
+  # Build context block for each --context path given (supports multiple --context flags)
+  if [ ${#context_paths[@]} -gt 0 ]; then
     local ctx_block=""
-    ctx_block="=== Context files from: $context_path ===\n"
+    local max_files=50
+    local max_bytes=65536  # 64KB total context limit across all paths
 
-    if [ -f "$context_path" ]; then
-      # Single file
-      local rel_path
-      rel_path=$(basename "$context_path")
-      ctx_block+="--- $rel_path ---\n"
-      ctx_block+="$(cat "$context_path")\n"
-      context_file_count=1
-    elif [ -d "$context_path" ]; then
-      # Directory — include all non-binary files (skip node_modules, .git, images, etc.)
-      local file_count=0
-      local max_files=50
-      local max_bytes=65536  # 64KB total context limit
+    for context_path in "${context_paths[@]}"; do
+      if [ ! -e "$context_path" ]; then
+        echo "Error: --context path not found: $context_path" >&2
+        exit 1
+      fi
 
-      while IFS= read -r -d '' file; do
-        [ $file_count -ge $max_files ] && break
-        # Skip zero-length or large binary files
-        local fsize
-        fsize=$(wc -c < "$file" 2>/dev/null || echo 0)
-        [ "$fsize" -gt 10240 ] && continue  # skip files >10KB
-        local total_so_far=${#ctx_block}
-        [ $total_so_far -gt $max_bytes ] && break
+      ctx_block+="=== Context files from: $context_path ===\n"
 
-        local rel_file
-        rel_file="${file#"$context_path/"}"
-        ctx_block+="--- $rel_file ---\n"
-        ctx_block+="$(cat "$file")\n"
-        file_count=$((file_count + 1))
-      done < <(find "$context_path" \
-        -not -path '*/node_modules/*' \
-        -not -path '*/.git/*' \
-        -not -path '*/__pycache__/*' \
-        -not -path '*/dist/*' \
-        -not -path '*/build/*' \
-        -not -name '*.png' -not -name '*.jpg' -not -name '*.jpeg' -not -name '*.gif' \
-        -not -name '*.svg' -not -name '*.ico' \
-        -not -name '*.woff' -not -name '*.woff2' -not -name '*.ttf' \
-        -not -name '*.min.js' -not -name '*.min.css' \
-        -not -name '*.map' -not -name '*.lock' \
-        -type f -print0 | sort -z)
+      if [ -f "$context_path" ]; then
+        # Single file
+        local rel_path
+        rel_path=$(basename "$context_path")
+        ctx_block+="--- $rel_path ---\n"
+        ctx_block+="$(cat "$context_path")\n"
+        context_file_count=$((context_file_count + 1))
+      elif [ -d "$context_path" ]; then
+        # Directory — include all non-binary files (skip node_modules, .git, images, etc.)
+        local file_count=0
 
-      ctx_block+="=== End of context ($file_count files) ===\n"
-      context_file_count=$file_count
-      _banner "▶ Attaching $file_count file(s) from $context_path as context..."
-    fi
+        while IFS= read -r -d '' file; do
+          [ $file_count -ge $max_files ] && break
+          # Skip zero-length or large binary files
+          local fsize
+          fsize=$(wc -c < "$file" 2>/dev/null || echo 0)
+          [ "$fsize" -gt 10240 ] && continue  # skip files >10KB
+          local total_so_far=${#ctx_block}
+          [ $total_so_far -gt $max_bytes ] && break
 
-    # Prepend context to message
+          local rel_file
+          rel_file="${file#"$context_path/"}"
+          ctx_block+="--- $rel_file ---\n"
+          ctx_block+="$(cat "$file")\n"
+          file_count=$((file_count + 1))
+        done < <(find "$context_path" \
+          -not -path '*/node_modules/*' \
+          -not -path '*/.git/*' \
+          -not -path '*/__pycache__/*' \
+          -not -path '*/dist/*' \
+          -not -path '*/build/*' \
+          -not -name '*.png' -not -name '*.jpg' -not -name '*.jpeg' -not -name '*.gif' \
+          -not -name '*.svg' -not -name '*.ico' \
+          -not -name '*.woff' -not -name '*.woff2' -not -name '*.ttf' \
+          -not -name '*.min.js' -not -name '*.min.css' \
+          -not -name '*.map' -not -name '*.lock' \
+          -type f -print0 | sort -z)
+
+        ctx_block+="=== End of context ($file_count files) ===\n"
+        context_file_count=$((context_file_count + file_count))
+        _banner "▶ Attaching $file_count file(s) from $context_path as context..."
+      fi
+    done
+
+    # Prepend all context to message
     message="$(printf '%b' "$ctx_block")\n\n$message"
   fi
 
@@ -477,13 +481,13 @@ cmd_cp() {
 }
 
 cmd_task() {
-  # clawbox task [--context <path>] [--thinking <level>] [--session <name>] [--timeout <min>] "description"
+  # clawbox task [--context <path>]... [--thinking <level>] [--session <name>] [--timeout <min>] "description"
   # Runs a task in the background; supports the same flags as `run`.
-  # --context <path>    Attach file/dir as context (same as run --context)
+  # --context <path>    Attach file/dir as context (can be repeated for multiple paths)
   # --thinking <level>  Thinking level: off|minimal|low|medium|high|xhigh
   # --session <name>    Named session for conversation continuity
   # --timeout <min>     Kill agent after N minutes and send handoff prompt (0 = no timeout)
-  local context_path=""
+  local -a context_paths=()
   local thinking_level=""
   local session_key=""
   local timeout_min=0
@@ -492,11 +496,12 @@ cmd_task() {
   while [[ $# -gt 0 ]]; do
     case "${1:-}" in
       --context|-c)
-        context_path="${2:-}"
-        if [ -z "$context_path" ]; then
+        local _ctx_path="${2:-}"
+        if [ -z "$_ctx_path" ]; then
           echo "Usage: clawbox task --context <path> \"description\""
           exit 1
         fi
+        context_paths+=("$_ctx_path")
         shift 2
         ;;
       --thinking|-T)
@@ -541,46 +546,48 @@ cmd_task() {
   ts=$(date '+%Y-%m-%d %H:%M:%S')
   echo "$ts | $desc" >> "$TASKS_FILE"
 
-  # Build context block if --context given (mirrors cmd_run logic)
+  # Build context block for each --context path given (mirrors cmd_run multi-context logic)
   local context_file_count=0
-  if [ -n "$context_path" ]; then
-    if [ ! -e "$context_path" ]; then
-      echo "Error: --context path not found: $context_path" >&2
-      exit 1
-    fi
+  if [ ${#context_paths[@]} -gt 0 ]; then
     local ctx_block=""
-    ctx_block="=== Context files from: $context_path ===\n"
-    if [ -f "$context_path" ]; then
-      ctx_block+="--- $(basename "$context_path") ---\n"
-      ctx_block+="$(cat "$context_path")\n"
-      context_file_count=1
-    elif [ -d "$context_path" ]; then
-      local file_count=0
-      local max_files=50
-      local max_bytes=65536
-      while IFS= read -r -d '' file; do
-        [ $file_count -ge $max_files ] && break
-        local fsize
-        fsize=$(wc -c < "$file" 2>/dev/null || echo 0)
-        [ "$fsize" -gt 10240 ] && continue
-        local total_so_far=${#ctx_block}
-        [ $total_so_far -gt $max_bytes ] && break
-        local rel_file="${file#"$context_path/"}"
-        ctx_block+="--- $rel_file ---\n"
-        ctx_block+="$(cat "$file")\n"
-        file_count=$((file_count + 1))
-      done < <(find "$context_path" \
-        -not -path '*/node_modules/*' -not -path '*/.git/*' \
-        -not -path '*/__pycache__/*' -not -path '*/dist/*' -not -path '*/build/*' \
-        -not -name '*.png' -not -name '*.jpg' -not -name '*.jpeg' -not -name '*.gif' \
-        -not -name '*.svg' -not -name '*.ico' \
-        -not -name '*.woff' -not -name '*.woff2' -not -name '*.ttf' \
-        -not -name '*.min.js' -not -name '*.min.css' -not -name '*.map' -not -name '*.lock' \
-        -type f -print0 | sort -z)
-      ctx_block+="=== End of context ($file_count files) ===\n"
-      context_file_count=$file_count
-      echo "▶ Attaching $file_count file(s) from $context_path as context..."
-    fi
+    local max_files=50
+    local max_bytes=65536
+    for context_path in "${context_paths[@]}"; do
+      if [ ! -e "$context_path" ]; then
+        echo "Error: --context path not found: $context_path" >&2
+        exit 1
+      fi
+      ctx_block+="=== Context files from: $context_path ===\n"
+      if [ -f "$context_path" ]; then
+        ctx_block+="--- $(basename "$context_path") ---\n"
+        ctx_block+="$(cat "$context_path")\n"
+        context_file_count=$((context_file_count + 1))
+      elif [ -d "$context_path" ]; then
+        local file_count=0
+        while IFS= read -r -d '' file; do
+          [ $file_count -ge $max_files ] && break
+          local fsize
+          fsize=$(wc -c < "$file" 2>/dev/null || echo 0)
+          [ "$fsize" -gt 10240 ] && continue
+          local total_so_far=${#ctx_block}
+          [ $total_so_far -gt $max_bytes ] && break
+          local rel_file="${file#"$context_path/"}"
+          ctx_block+="--- $rel_file ---\n"
+          ctx_block+="$(cat "$file")\n"
+          file_count=$((file_count + 1))
+        done < <(find "$context_path" \
+          -not -path '*/node_modules/*' -not -path '*/.git/*' \
+          -not -path '*/__pycache__/*' -not -path '*/dist/*' -not -path '*/build/*' \
+          -not -name '*.png' -not -name '*.jpg' -not -name '*.jpeg' -not -name '*.gif' \
+          -not -name '*.svg' -not -name '*.ico' \
+          -not -name '*.woff' -not -name '*.woff2' -not -name '*.ttf' \
+          -not -name '*.min.js' -not -name '*.min.css' -not -name '*.map' -not -name '*.lock' \
+          -type f -print0 | sort -z)
+        ctx_block+="=== End of context ($file_count files) ===\n"
+        context_file_count=$((context_file_count + file_count))
+        echo "▶ Attaching $file_count file(s) from $context_path as context..."
+      fi
+    done
     desc="$(printf '%b' "$ctx_block")\n\n$desc"
   fi
 
@@ -1207,7 +1214,7 @@ Commands:
   chat               Open interactive TUI chat session
   chat --session <name>  Open TUI with a named session (persistent per-project threads)
   run "message"      Send a one-shot message to the agent
-  run --context <path> "msg"  Inject file/dir as context before the message
+  run --context <path> "msg"  Inject file/dir as context (repeat for multiple paths)
   run --thinking <level> "msg"  Set thinking level (off|minimal|low|medium|high|xhigh)
   run --session <name> "msg"  Use a named session (persistent conversation thread)
   run --quiet "msg"  Suppress status banners; print only the agent's response
@@ -1215,7 +1222,7 @@ Commands:
   run --retry <n> "msg"  Retry up to N times (60s delay) if API rate-limited (exit 2 on limit)
   ask "question"     Alias for run — supports the same flags
   task "description" Run a task in the background (output saved to ~/.clawbox-task.log)
-  task --context <path> "desc"  Background task with file/dir context
+  task --context <path> "desc"  Background task with context (repeat for multiple paths)
   task --thinking <level> "desc"  Background task with thinking level
   task --session <name> "desc"  Background task in a named session
   task --timeout <min> "desc"  Kill agent after N minutes; send handoff prompt to update TASK.md
