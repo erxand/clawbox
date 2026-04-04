@@ -2,6 +2,16 @@
 
 ## Test Results
 
+### T24 — Context injection at scale + clawbox clean abort (2026-04-03)
+
+**Run 1 (2026-04-03 20:56) — new test, first run:**
+- ✓ **14/14 pass, 0 warn, 0 fail** — perfect score on first run
+- ✓ Phase 1 (--context dir): Valid JSON, context_files=10 (all 10 project files injected), elapsed_ms positive, session key present, agent referenced all 5/5 project concepts (invoice, client, route, auth, API)
+- ✓ Phase 2 (clean abort): Warning message present, abort confirmed, container NOT stopped, 'clean' in help
+- ✓ Phase 3 (large file, 6.4KB): context_files=1, agent correctly quoted XYZZY_T24_CANARY_42 sentinel value
+- **Key findings:** `--context <dir>` correctly injects all non-excluded files (node_modules filtered); the 10-file limit is well below the 50-file cap. `clawbox clean` abort path is safe and correct — 'N' input stops all destructive action. Large file injection (~6KB) works without truncation.
+- **Verdict:** Context injection at realistic project scale is fully functional. clean abort is safe. ✅
+
 ### T23 — restart and logs commands (2026-04-03)
 
 **Run 1 (2026-04-03 18:52) — new test, first run:**
@@ -706,6 +716,14 @@ Deliberately introduce errors during a task (kill a dependency, corrupt a file, 
 ### T5 — Real-world project onboarding ✅ 2026-03-26, re-runs 2026-03-29, 2026-03-30, 2026-03-31
 Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask the agent to: (1) understand the codebase, (2) add a new feature, (3) write tests, (4) make sure existing tests pass. Measure quality and completeness.
 
+**Re-run (2026-04-03 20:47) — stability check:**
+- ✓ **12/12 pass (5/5 assessment checks), 0 warn, 0 fail** — all tests green
+- ✓ Middleware created: `src/middleware/rateLimit.js` with per-IP tracking, configurable limit/window
+- ✓ Middleware wired into `src/index.js`, tests written, all 12 tests pass (9 existing + 3 new rate limit tests)
+- ✓ Completed in 161s (~2.7 min) — clean run
+- ✓ Agent also fixed Node 22 test runner compat issue (before/after hooks need promises not done callbacks)
+- **Verdict:** T5 fully stable, agent continues to produce high-quality middleware code. ✅
+
 **Re-run (2026-04-02 18:47) — stability check:**
 - ✓ **13/13 pass (5/5 assessment checks), 0 warn, 0 fail** — all tests green
 - ✓ Middleware created: `src/middleware/rateLimit.js` with per-IP tracking, configurable limit/window, `setInterval.unref()` cleanup
@@ -772,6 +790,15 @@ Clone a non-trivial open source project (e.g. a medium-sized Express app). Ask t
 - **Verdict:** T5 scaffold fix confirmed working. ISSUE-44 rate-limit detection fix also confirmed (run was not rate-limited this time). Agent produced high-quality middleware code but left a 1-test regression. Score: 4/4 assessment checks pass, but 13/14 actual tests. Solid performance; the failure mode is instructive. ✅
 
 ### T14 — Multi-error recovery (2026-03-28, re-run 2026-03-30, re-run 2026-03-31, re-run 2026-04-02) ✅
+
+**Re-run (2026-04-03 20:51) — stability check:**
+- ✓ **4/6 pass (actually 6/6 effective), 0 fail, 2 warn** — same consistent pattern
+- ✓ Syntax error (missing `});`) fixed correctly in 90s
+- ✓ Wrong import path (`./helpers` → `./utils`) fixed correctly
+- ✓ Missing function (`subtract()` added to utils.js) — correct implementer behavior
+- ✓ All 3 tests passing, server starts cleanly
+- ⚠ Same 2 benign warns as prior runs (helpers comment grep match; low line-count warn)
+- **Verdict:** T14 fully stable. Agent error recovery consistent. ✅
 
 **Re-run (2026-04-02 20:47) — stability check + test script fixes:**
 - ✓ **4/6 pass (actually 6/6 effective), 0 fail, 2 warn** — same pattern as prior
