@@ -2,6 +2,21 @@
 
 ## Test Results
 
+### T32 — task→run session continuity bridge (2026-04-04)
+
+**Run 1 (2026-04-04 12:51) — new test, first run:**
+- ✓ **19/19 pass, 0 warn, 0 fail** — perfect score on first run
+- ✓ Phase 1 (source audit): --session case present in both cmd_task and cmd_run; session_key forwarded as --session-id in both commands; confirmed same flag (--session-id) → shared history
+- ✓ Phase 2a-d (task startup): task started non-blocking, log path captured, completed within 2s (fast task), sentinel found in task log
+- ✓ Phase 2e (session bridge): sentinel `BRIDGE_SENTINEL_T32_...` correctly recalled in a follow-up `clawbox run --session X` call — **the cross-command session bridge is fully functional**
+- ✓ Phase 3a-b (isolation): sentinel NOT present in a different session (`t32-isolation-*`); isolation session correctly reported no prior context
+- ✓ Phase 4a-b (JSON): `--json` output is valid JSON with correct `session` key matching the `--session` arg
+- ✓ Phase 5a-b (error paths): empty `--session ""` in both run and task gives usage hint / non-zero exit
+- ✓ Phase 6a-b (help text): `--session` documented in both run and task sections of help
+- **Key finding:** The `task --session X` → `run --session X` workflow is the primary real-world usage pattern for "start a background job, check in later." Both commands route to the same `--session-id` flag when calling `openclaw agent`, confirming shared history. T10 only tested `run`→`run` continuity; T31 only tested that `task` accepts `--session`; T32 is the first end-to-end bridge verification.
+- **Duration:** 38s (fast — background task completed in 2s, no heavy API calls)
+- **Verdict:** Session bridge between task and run is fully functional. 19/19 on first run. ✅
+
 ### T31 — task flag completeness + output format validation (2026-04-04)
 
 **Run 1 (2026-04-04 10:57) — new test + bug fix, first run:**
