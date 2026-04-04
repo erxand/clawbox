@@ -507,16 +507,18 @@ cmd_cp() {
 }
 
 cmd_task() {
-  # clawbox task [--context <path>]... [--thinking <level>] [--session <name>] [--timeout <min>] "description"
+  # clawbox task [--context <path>]... [--thinking <level>] [--session <name>] [--timeout <min>] [--retry <n>] "description"
   # Runs a task in the background; supports the same flags as `run`.
   # --context <path>    Attach file/dir as context (can be repeated for multiple paths)
   # --thinking <level>  Thinking level: off|minimal|low|medium|high|xhigh
   # --session <name>    Named session for conversation continuity
   # --timeout <min>     Kill agent after N minutes and send handoff prompt (0 = no timeout)
+  # --retry <n>         Retry up to N times (60s delay) if API rate-limited (default: 0)
   local -a context_paths=()
   local thinking_level=""
   local session_key=""
   local timeout_min=0
+  local retry_max=0
   local desc=""
 
   while [[ $# -gt 0 ]]; do
@@ -554,6 +556,14 @@ cmd_task() {
         fi
         shift 2
         ;;
+      --retry|-r)
+        retry_max="${2:-}"
+        if [ -z "$retry_max" ] || ! [[ "$retry_max" =~ ^[0-9]+$ ]]; then
+          echo "Usage: clawbox task --retry <n> \"description\""
+          exit 1
+        fi
+        shift 2
+        ;;
       *)
         desc="${1:-}"
         shift
@@ -562,7 +572,7 @@ cmd_task() {
   done
 
   if [ -z "$desc" ]; then
-    echo "Usage: clawbox task [--context <path>] [--thinking <level>] [--session <name>] [--timeout <min>] \"description\""
+    echo "Usage: clawbox task [--context <path>] [--thinking <level>] [--session <name>] [--timeout <min>] [--retry <n>] \"description\""
     exit 1
   fi
 
@@ -641,17 +651,45 @@ cmd_task() {
       [ $context_file_count -gt 0 ] && echo "Context files: $context_file_count"
       [ -n "$session_key" ] && echo "Session: $session_key"
       [ "$timeout_min" -gt 0 ] && echo "Timeout: ${timeout_min}m"
+      [ "$retry_max" -gt 0 ] && echo "Retry: up to ${retry_max} attempt(s) on rate limit"
       echo ""
 
       # Run agent, optionally with a wall-clock timeout (ISSUE-42)
       # macOS doesn't ship `timeout` (GNU coreutils); use a watchdog subshell instead.
       # Note: we're inside a background (subshell), not a function — use plain vars.
       timed_out=0
+      _run_agent_with_retry() {
+        local _attempt=0
+        local _response=""
+        while true; do
+          _attempt=$(( _attempt + 1 ))
+          _response=$(OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
+            openclaw agent --agent main ${agent_args[@]+"${agent_args[@]}"} -m "$desc" 2>&1) || true
+          # Check for rate-limit patterns
+          if echo "$_response" | grep -qi "API rate limit reached\|rate_limit_error\|overloaded_error"; then
+            if [ "$_attempt" -le "$retry_max" ]; then
+              echo "⚠ Rate limited by API (attempt $_attempt/$retry_max). Waiting 60s before retry..."
+              sleep 60
+              continue
+            else
+              echo "⚠ CLAWBOX_RATE_LIMITED: API rate limit reached after $retry_max retries." >&2
+              echo "$_response"
+              return 2
+            fi
+          fi
+          echo "$_response"
+          return 0
+        done
+      }
       if [ "$timeout_min" -gt 0 ]; then
         timeout_secs=$(( timeout_min * 60 ))
         # Spawn agent in background, capture its PID
-        OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
-          openclaw agent --agent main ${agent_args[@]+"${agent_args[@]}"} -m "$desc" &
+        if [ "$retry_max" -gt 0 ]; then
+          _run_agent_with_retry &
+        else
+          OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
+            openclaw agent --agent main ${agent_args[@]+"${agent_args[@]}"} -m "$desc" &
+        fi
         agent_pid=$!
         # Watchdog: sleep timeout_secs, then kill the agent if still running
         ( sleep "$timeout_secs"
@@ -675,8 +713,12 @@ cmd_task() {
         kill "$watchdog_pid" 2>/dev/null || true
         wait "$watchdog_pid" 2>/dev/null || true
       else
-        OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
-          openclaw agent --agent main ${agent_args[@]+"${agent_args[@]}"} -m "$desc"
+        if [ "$retry_max" -gt 0 ]; then
+          _run_agent_with_retry
+        else
+          OPENCLAW_GATEWAY_URL="$GATEWAY_URL" OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
+            openclaw agent --agent main ${agent_args[@]+"${agent_args[@]}"} -m "$desc"
+        fi
       fi
 
       # Handoff prompt on timeout (ISSUE-42): ask agent to summarise and update TASK.md
@@ -735,6 +777,7 @@ This is a handoff checkpoint — make TASK.md accurate so the next session can r
   [ -n "$session_key" ] && echo "  Session: $session_key"
   [ $context_file_count -gt 0 ] && echo "  Context: $context_file_count file(s) from $context_path"
   [ "$timeout_min" -gt 0 ] && echo "  Timeout: ${timeout_min}m (handoff prompt sent on expiry)"
+  [ "$retry_max" -gt 0 ] && echo "  Retry:   up to ${retry_max} attempt(s) on rate limit"
   echo "  Log:     $task_log_file"
   echo "  Output:  clawbox task-logs   (tail -f the latest log)"
   echo "  Status:  clawbox task-status (full status + history)"
@@ -1253,6 +1296,7 @@ Commands:
   task --thinking <level> "desc"  Background task with thinking level
   task --session <name> "desc"  Background task in a named session
   task --timeout <min> "desc"  Kill agent after N minutes; send handoff prompt to update TASK.md
+  task --retry <n> "desc"  Retry up to N times (60s delay) if API rate-limited
   task-status        Check background task progress + last task output
   task-logs          Live tail of background task output (tail -f ~/.clawbox-task.log)
   cancel             Cancel the currently running background task

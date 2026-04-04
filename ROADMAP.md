@@ -2,6 +2,30 @@
 
 ## Test Results
 
+### T31 — task flag completeness + output format validation (2026-04-04)
+
+**Run 1 (2026-04-04 10:57) — new test + bug fix, first run:**
+- ✓ **33/33 pass, 0 warn, 0 fail** — perfect score on first run (after test script grep fix)
+- ✓ Phase 1 (source audit): --retry, --timeout, --session, --context, --thinking all parsed in cmd_task; retry_max actually used in logic (not just declared)
+- ✓ Phase 2 (flag acceptance): --retry 1, --session, --thinking all accepted; tasks start non-blocking; session name shown in output; 'retry' shown when --retry N > 0
+- ✓ Phase 3 (output format): Log: path shown, symlink exists and resolves, 'task-logs' and 'task-status' hints present
+- ✓ Phase 4 (error paths): --retry with no value exits non-zero with usage hint; --timeout with non-numeric exits non-zero; --retry with non-numeric exits non-zero
+- ✓ Phase 5 (flag parity): --retry in both cmd_run and cmd_task; --timeout correctly task-only; --quiet/--json correctly absent from cmd_task
+- ✓ Phase 6 (help text): --retry, --timeout, --session, --context all documented in help for task
+- ✓ Phase 7 (--retry 0): accepted without error; 'Retry:' correctly omitted in startup output
+- ✓ Phase 8 (combined flags): --session + --retry, and --thinking + --retry + message (3-flag) all accepted
+- **Bug found and fixed:** `cmd_task` had `--retry` documented (help text + T22 Phase 6 "accepted" check) but the implementation was completely missing. The flag fell through to the `*)` catch-all, silently overwriting the task description. `--retry 3 "do something"` would set `desc="do something"` but `retry_max=0` — the retry flag was ignored entirely. T22 Phase 6 only checked for a crash (exit 0), not that the flag was actually parsed.
+- **Fix:** Added `--retry|-r)` case to cmd_task's flag-parsing loop (mirrors cmd_run). Added `_run_agent_with_retry()` helper function that runs with retry logic inside the background subshell, supporting both timeout and non-timeout paths. Added help text entry. Added 'Retry:' to startup output when `--retry N > 0`.
+- **First run had 2 warns** from `grep -c || echo "0"` pattern (same ISSUE-66 newline bug in test script). Fixed to boolean grep checks.
+- **Verdict:** T31 fully clean. `--retry` flag is now fully implemented and tested in `cmd_task`. ✅
+
+### ISSUE-T31: cmd_task --retry flag silently ignored ✅ Fixed 2026-04-04
+**Problem:** `clawbox task --retry 3 "description"` would ignore `--retry 3` entirely. The `--retry` case was missing from cmd_task's while-loop, so the flag text fell to the `*)` catch-all, silently setting `desc="3"` (the value) or `desc="description"` (overwriting). `retry_max` stayed at 0. T22 Phase 6 only tested that `--retry 1` on a `task` didn't crash — it didn't verify that retry_max was actually set.
+**Fix:** Added `--retry|-r)` case to cmd_task's flag loop. Added `_run_agent_with_retry()` helper used in both timeout and non-timeout agent execution paths. Added 'Retry:' line to startup output when retry_max > 0. Updated help text. Updated usage error message to document `--retry`.
+**Discovered by:** T31 Phase 1f — the check `echo "$CMD_TASK_SRC" | grep -q "retry_max.*-gt\|retry_max.*le"` would have caught a declared-but-unused variable.
+
+
+
 ### T30 — Shell automation + exit code contract (2026-04-04)
 
 **Run 1 (2026-04-04 08:52) — new test, first run:**
