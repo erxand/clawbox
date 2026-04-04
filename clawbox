@@ -248,6 +248,9 @@ cmd_chat() {
 
 cmd_run() {
   # clawbox run [--context <path>]... [--thinking <level>] [--session <name>] [--quiet] [--json] [--retry <n>] "your message"
+  # clawbox run [flags] -         ← read message from stdin (explicit)
+  # echo "message" | clawbox run [flags]   ← read message from stdin (piped)
+  # cat file | clawbox run [flags] "append this to the piped content"
   # --context <path>    Attach file(s) as context (file or directory; can be specified multiple times)
   # --thinking <level>  Thinking level: off|minimal|low|medium|high|xhigh
   # --session <name>    Named session key for conversation continuity (e.g. "myproject")
@@ -311,8 +314,31 @@ cmd_run() {
     esac
   done
 
-  if [ -z "$message" ]; then
+  # ISSUE-stdin: Support piped input.
+  # If message is "-" (explicit stdin marker) OR no message given AND stdin is not a TTY,
+  # read from stdin. If a message was ALSO given alongside piped stdin, append the
+  # message as an instruction line after the piped content.
+  if [ "${message:-}" = "-" ]; then
+    # Explicit stdin marker: read all of stdin as the message
+    local stdin_content
+    stdin_content=$(cat)
+    message="$stdin_content"
+  elif [ -z "${message:-}" ] && ! [ -t 0 ]; then
+    # Piped stdin with no inline message — read stdin as the message
+    local stdin_content
+    stdin_content=$(cat)
+    message="$stdin_content"
+  elif ! [ -t 0 ]; then
+    # Piped stdin AND an inline message — prepend stdin content, append message as instruction
+    local stdin_content
+    stdin_content=$(cat)
+    message="$(printf '%s\n\n%s' "$stdin_content" "$message")"
+  fi
+
+  if [ -z "${message:-}" ]; then
     echo "Usage: clawbox run [--context <path>] [--thinking <level>] [--quiet|--json] \"your message\""
+    echo "       echo 'message' | clawbox run [flags]   ← read from stdin"
+    echo "       clawbox run [flags] -                  ← read from stdin (explicit)"
     exit 1
   fi
 
@@ -1214,13 +1240,14 @@ Commands:
   chat               Open interactive TUI chat session
   chat --session <name>  Open TUI with a named session (persistent per-project threads)
   run "message"      Send a one-shot message to the agent
+  run -             Read message from stdin (echo "..." | clawbox run is also supported)
   run --context <path> "msg"  Inject file/dir as context (repeat for multiple paths)
   run --thinking <level> "msg"  Set thinking level (off|minimal|low|medium|high|xhigh)
   run --session <name> "msg"  Use a named session (persistent conversation thread)
   run --quiet "msg"  Suppress status banners; print only the agent's response
   run --json "msg"   Output result as JSON {response, elapsed_ms, timestamp, context_files, session}
   run --retry <n> "msg"  Retry up to N times (60s delay) if API rate-limited (exit 2 on limit)
-  ask "question"     Alias for run — supports the same flags
+  ask "question"     Alias for run — supports the same flags (including stdin)
   task "description" Run a task in the background (output saved to ~/.clawbox-task.log)
   task --context <path> "desc"  Background task with context (repeat for multiple paths)
   task --thinking <level> "desc"  Background task with thinking level

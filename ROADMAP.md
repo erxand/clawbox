@@ -2,6 +2,37 @@
 
 ## Test Results
 
+### T29 — stdin / pipe input support (2026-04-04)
+
+**Run 1 (2026-04-04 06:55) — new feature + new test, first run:**
+- ✓ **15/15 pass, 0 warn, 0 fail** — perfect score on first run
+- ✓ Phase 0: Source audit — stdin detection code present (11 refs), help text mentions pipe/stdin
+- ✓ Phase 1a: `echo "msg" | clawbox run` — auto-detected pipe, sentinel returned
+- ✓ Phase 1b: `echo "msg" | clawbox run --quiet` — works with --quiet, no banner on stdout
+- ✓ Phase 1c: `echo "msg" | clawbox run --json` — valid JSON output with sentinel in response
+- ✓ Phase 2a: `clawbox run -` with heredoc — explicit dash reads stdin
+- ✓ Phase 2b: `clawbox run --quiet -` — dash works with flags
+- ✓ Phase 2c: `clawbox run --session X -` — dash + flag position independence
+- ✓ Phase 3a: piped body + inline instruction → body used as context, instruction executed
+- ✓ Phase 3b: piped diff + "summarize" instruction → diff content correctly referenced
+- ✓ Phase 4a: `echo | clawbox ask --quiet` — ask alias inherits stdin support via cmd_run delegation
+- ✓ Phase 5a: no message (TTY) → usage hint shown (not hang)
+- ✓ Phase 5b: empty stdin → no hang, got output or usage hint
+- ✓ Phase 5c: multiline stdin preserved and used correctly
+- ✓ Phase 5d: ~2KB piped content handled, sentinel found by agent
+- **Feature: ISSUE-stdin** — three new patterns now supported: (1) auto-detect `echo | clawbox run`, (2) explicit dash `clawbox run -`, (3) pipe+instruction `cat log | clawbox run "summarize"`. All work with all existing flags.
+- **Verdict:** Stdin / pipe input is production-ready. 15/15 on first run. ✅
+
+### FEATURE: stdin / pipe input — `echo "msg" | clawbox run` (2026-04-04)
+**Problem:** `clawbox run` required a quoted string argument. Long messages, error logs, diffs, or programmatic inputs required awkward shell quoting or temp files. Unix pipeline composition was impossible.
+**Use cases:** `cat error.log | clawbox run "diagnose this"`, `git diff | clawbox run "write a commit message"`, `echo "What is 2+2?" | clawbox run`, scripts that generate dynamic prompts.
+**Fix:** Added three pipe patterns to `cmd_run` (and by delegation to `cmd_ask`):
+1. **Auto-detect:** `echo "msg" | clawbox run` — if stdin is not a TTY and no message arg given, read stdin as message
+2. **Explicit dash:** `clawbox run -` — explicit stdin marker, works with heredoc and process substitution
+3. **Body + instruction:** `cat log | clawbox run "summarize"` — piped content prepended to inline message as body; inline arg treated as the instruction
+All patterns work with all existing flags (--quiet, --json, --session, --thinking, --context, --retry).
+**Result:** T29 confirms 15/15 checks pass. ✅
+
 ### T28 — Combined flags interaction (2026-04-04)
 
 **Run 1 (2026-04-04 04:53) — new test, first run:**
