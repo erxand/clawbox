@@ -2,6 +2,33 @@
 
 ## Test Results
 
+### T28 — Combined flags interaction (2026-04-04)
+
+**Run 1 (2026-04-04 04:53) — new test, first run:**
+- ✓ **17/17 pass, 0 warn, 0 fail** — perfect score on first run
+- ✓ Phase 1: `--thinking minimal + --json` → valid JSON, elapsed_ms positive, sentinel returned
+- ✓ Phase 2: `--session + --json` → JSON 'session' key matches --session arg exactly
+- ✓ Phase 3: `--context + --quiet` → no banner leaked to stdout, context referenced in response
+- ✓ Phase 4: `--thinking + --session + --quiet` (3-flag combo) → no crash, sentinel returned, quiet honored
+- ✓ Phase 5: Flag-order independence — flags before and after message arg both parse correctly
+- ✓ Phase 6: `--json + 2x --context` → context_files=2, both files (alpha/beta) referenced in response
+- ✓ Phase 7: Source audit — --quiet and --json use `shift 1` (boolean flags, don't consume next arg)
+- **Key finding:** All flag combinations work correctly. No arg-shift bugs, no variable shadowing, no flag-stripping. The 3-flag combo (Phase 4) is the most complex real-world use case and passes cleanly. This is the first test to explicitly verify cross-flag interactions — all prior tests used flags in isolation.
+- **Verdict:** Combined flag usage is fully correct across all 7 tested combinations. First dedicated multi-flag interaction test. ✅
+
+### T9 — Output modes (2026-04-04)
+
+**Re-run (2026-04-04 04:51) — stability check:**
+- ✓ **18/18 pass, 0 warn, 0 fail** — perfect score maintained
+- **Verdict:** T9 fully stable. ✅
+
+### T10 — Session naming (2026-04-04)
+
+**Re-run (2026-04-04 04:52) — stability check:**
+- ✓ **10/10 pass, 1 warn, 0 fail** — same pattern as prior runs
+- ⚠ Session isolation: shared agent long-term memory by design (expected)
+- **Verdict:** T10 fully stable. ✅
+
 ### T27 — --thinking flag validation (2026-04-04)
 
 **Run 1 (2026-04-04 02:52) — new test, first run:**
